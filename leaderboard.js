@@ -222,13 +222,14 @@
 
   const fmt = (n) => Number(n || 0).toLocaleString('en-US');
 
-  // Cumulative all-player stats, shown discretely at the bottom of the panel
+  // Cumulative all-player stats, shown discretely at the bottom of the panel.
+  // Line 1 = all-time totals, line 2 = today since midnight Pacific time.
   function renderStats(st) {
     if (!st) return;
     const scope = st.online ? 'All players' : 'This device';
     els.stats.textContent =
-      `${scope}: ${fmt(st.total.flaps)} flaps · ${fmt(st.total.gates)} gates cleared` +
-      `   |   today (Pacific): ${fmt(st.today.flaps)} flaps · ${fmt(st.today.gates)} gates`;
+      `${scope}, all time: ${fmt(st.total.flaps)} flaps · ${fmt(st.total.gates)} gates cleared\n` +
+      `Today (Pacific): ${fmt(st.today.flaps)} flaps · ${fmt(st.today.gates)} gates`;
   }
 
   const medals = ['🥇', '🥈', '🥉'];
