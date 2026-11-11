@@ -1,0 +1,20 @@
+name = "flappy-turkey-leaderboard"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+# Fill database_id after running: npx wrangler d1 create flappy-turkey-scores
+[[d1_databases]]
+binding = "DB"
+database_name = "flappy-turkey-scores"
+database_id = "REPLACE_AFTER_WRANGLER_D1_CREATE"
+
+[vars]
+# Comma-separated list of origins allowed to call the API (CORS):
+# the GitHub Pages site plus local dev servers.
+ALLOWED_ORIGINS = "https://erikbeans.github.io,http://localhost:8000,http://127.0.0.1:8000"
+# Absolute cap on any single submitted score.
+MAX_SCORE = "1000"
+
+# SCORE_SECRET is NOT stored in this file — set it with:
+#   npx wrangler secret put SCORE_SECRET
+# (for local dev only, put it in a gitignored .dev.vars file)
