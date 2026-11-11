@@ -78,4 +78,12 @@ curl -s -X POST "$BASE/api/score" -H "Origin: $ORIGIN" -H 'Content-Type: applica
 
 # read the board
 curl -s "$BASE/api/leaderboard?limit=100" -H "Origin: $ORIGIN" | jq .
+
+# report a finished game's stats (same signed run; separate from the score above)
+curl -s -X POST "$BASE/api/stats" -H "Origin: $ORIGIN" -H 'Content-Type: application/json' -d "{
+  \"runId\": \"$RUN_ID\", \"startedAt\": $STARTED, \"token\": \"$TOKEN\",
+  \"flaps\": 42, \"gates\": 5, \"durationMs\": 8000 }"
+
+# read cumulative all-player stats (all-time + today in Pacific time)
+curl -s "$BASE/api/stats" -H "Origin: $ORIGIN" | jq .
 ```
