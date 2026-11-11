@@ -28,7 +28,7 @@ No build step and no dependencies. Either:
   - **Ovens** — steel range with a glowing fire door (widest, 108px)
   - **Deep fryers** — vat of bubbling oil at the gap edge (96px)
   - **Pitchforks** 🍴 — wooden handle with a steel trident head (80px)
-  - **Live wires** ⚡ — swaying cable with sparking tips; only a small fringe at the gap edges is dangerous (64px)
+  - **Live wires** ⚡ — swaying cable with sparking tips; only the cable and its sparks are dangerous (36px hitbox, sprite drawn to match)
 - A path through every gap is always guaranteed: gap centers never jump more than 210px between obstacles, and the gap never shrinks below what fits the turkey.
 - Each obstacle you pass = 1 point. Best score is saved in `localStorage`.
 - The game speeds up and the gaps shrink slightly as your score grows.

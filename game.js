@@ -22,14 +22,18 @@
   // shapes (never larger than the sprite). Rotated with the bird and each
   // tested against the obstacles, so the hitbox stays within what you see.
   const BIRD_HIT = [
-    { x: 0,    y: 0,   r: 16 },    // body (inscribed in the 23x17 ellipse)
-    { x: 12,   y: 0,   r: 11 },
-    { x: -12,  y: 0,   r: 11 },
-    { x: 15,   y: -13, r: 11 },    // head (drawn r=11.5)
-    { x: 22.5, y: -18, r: 2.5 },   // snood
-    { x: 24.5, y: -5,  r: 3 },     // wattle
-    { x: 27,   y: -12, r: 3 },     // beak (inscribed in the triangle)
-    { x: -18,  y: 1,   r: 4.5 },   // tail fan base
+    // circles COVER the drawn shapes (fill + stroke), so any visual overlap is a hit
+    { x: 0,    y: 0,   r: 18 },    // body (fill ellipse ry 17 + 1.5 stroke)
+    { x: 12,   y: 0,   r: 12.5 },
+    { x: -12,  y: 0,   r: 12.5 },
+    { x: 15,   y: -13, r: 12.8 },  // head (fill r 11.5 + stroke)
+    { x: 22.5, y: -18, r: 5 },     // snood
+    { x: 24.5, y: -5,  r: 5.5 },   // wattle
+    { x: 26,   y: -12, r: 4.5 },   // beak (two circles hug the triangle, tip included)
+    { x: 31,   y: -11.8, r: 3.5 },
+    { x: 14,   y: -27, r: 4 },     // head tuft
+    { x: -18,  y: 1,   r: 8 },     // tail fan base
+    { x: -26,  y: 0,   r: 5 },     // tail fan tips
   ];
   // Obstacle types — each has its own sprite width and a hitbox width.
   // Rule: the hitbox never extends beyond the animated sprite.
@@ -41,14 +45,14 @@
   };
   const FORK_HANDLE_W = 22;  // must match the handle drawn in drawPitchfork
   const FORK_HEAD_D = 34;    // depth of the trident head at the gap edge
-  const MAX_GAP_JUMP = 210;    // max vertical move between consecutive gaps (guarantees a path)
-  const BASE_GAP = 180;        // starting gap between obstacles
-  const MIN_GAP = 142;         // smallest gap (at high scores)
-  const GAP_SHRINK = 1.1;      // px of gap lost per point
-  const BASE_SPEED = 178;      // px/s horizontal scroll speed
-  const SPEED_RAMP = 2.0;      // px/s gained per point
-  const MAX_SPEED_BONUS = 90;
-  const PIPE_SPACING = 295;    // horizontal distance between obstacles
+  const MAX_GAP_JUMP = 200;    // max vertical move between consecutive gaps (guarantees a path)
+  const BASE_GAP = 168;        // starting gap between obstacles
+  const MIN_GAP = 132;         // smallest gap (at high scores) — still fits the turkey
+  const GAP_SHRINK = 1.3;      // px of gap lost per point
+  const BASE_SPEED = 186;      // px/s horizontal scroll speed
+  const SPEED_RAMP = 2.2;      // px/s gained per point
+  const MAX_SPEED_BONUS = 100;
+  const PIPE_SPACING = 280;    // horizontal distance between obstacles
   const GROUND_H = 92;
   const ELEC_SHRINK = 24;      // electric aura eats only this much of the safe gap
   const ROAST_BOUNCES = 2;     // floor bounces after the turkey is roasted
@@ -185,7 +189,7 @@
   // ---------- Obstacles ----------
   function effGap(p) {
     // live wires have sparking tips that eat a little of the gap; the rest is fully clear
-    return p.type === 'wires' ? Math.max(120, p.gap - ELEC_SHRINK) : p.gap;
+    return p.type === 'wires' ? Math.max(136, p.gap - ELEC_SHRINK) : p.gap;
   }
 
   function spawnPipe() {
@@ -240,6 +244,13 @@
       push(hx, -20, FORK_HANDLE_W, Math.max(0, top - FORK_HEAD_D + 20));
       push(p.x, bot, p.w, Math.min(FORK_HEAD_D, H - bot + 20));
       push(hx, bot + FORK_HEAD_D, FORK_HANDLE_W, H - bot + 20 - FORK_HEAD_D);
+    } else if (p.type === 'fryer') {
+      const hx = p.x + (p.w - p.hitW) / 2;
+      push(hx, -20, p.hitW, top + 20);
+      push(hx, bot, p.hitW, H - bot + 20);
+      // the oil vat and basket handle are DRAWN bulging into the gap — hitbox includes them
+      push(p.x + 8, top, p.w - 16, 18);
+      push(p.x + 8, bot - 18, p.w - 16, 18);
     } else {
       const hx = p.x + (p.w - p.hitW) / 2;
       push(hx, -20, p.hitW, top + 20);
@@ -690,19 +701,22 @@
   function drawWires(p, top, bot) {
     const x = p.x, w = p.w;
     const cx = x + w / 2;
-    const fringe = (p.gap - effGap(p)) / 2 + 6; // sparks reach a little past the collision edge
+    // collision edge sits this far past the visual gap edge; sparks end exactly there
+    const edgeInset = (p.gap - effGap(p)) / 2;
+    const fringe = Math.max(0, edgeInset - 6);
     const sway = Math.sin(elapsed * 2 + p.x) * 4;
     const flicker = 0.5 + 0.5 * Math.sin(elapsed * 21 + p.x);
 
-    // faint aura around the cables
+    // faint aura, kept within the hitbox width
+    const hx = x + (w - p.hitW) / 2;
     ctx.fillStyle = `rgba(0,229,255,${0.04 + 0.04 * flicker})`;
-    ctx.fillRect(x - 8, -20, w + 16, top + 20);
-    ctx.fillRect(x - 8, bot, w + 16, H - GROUND_H - bot + 20);
+    ctx.fillRect(hx - 4, -20, p.hitW + 8, top + 20);
+    ctx.fillRect(hx - 4, bot, p.hitW + 8, H - GROUND_H - bot + 20);
 
     // cable bodies (top hangs down, bottom rises up)
     ctx.save();
     ctx.shadowColor = '#00e5ff';
-    ctx.shadowBlur = 10 + 8 * flicker;
+    ctx.shadowBlur = 4 + 3 * flicker;
     ctx.strokeStyle = '#141a1e';
     ctx.lineWidth = 13;
     ctx.lineCap = 'round';
@@ -723,7 +737,7 @@
       for (let i = 0; i < 3; i++) {
         const off = (i - 1) * 9;
         const tipX = cx + sway + off;
-        const tipY = baseY + dir * 16;
+        const tipY = baseY + dir * 12;
         ctx.strokeStyle = wireCols[i];
         ctx.beginPath();
         ctx.moveTo(cx + sway, baseY);
@@ -733,7 +747,7 @@
       }
       ctx.save();
       ctx.shadowColor = '#00e5ff';
-      ctx.shadowBlur = 10;
+      ctx.shadowBlur = 2;
       ctx.strokeStyle = '#b3faff';
       ctx.lineWidth = 2;
       ctx.lineJoin = 'round';
@@ -741,7 +755,7 @@
         ctx.beginPath();
         ctx.moveTo(t.x, t.y);
         for (let s = 1; s <= 3; s++) {
-          ctx.lineTo(t.x + (Math.random() - 0.5) * 10, t.y + dir * (fringe * s) / 3);
+          ctx.lineTo(t.x + (Math.random() - 0.5) * 6, t.y + dir * (fringe * s) / 3);
         }
         ctx.stroke();
       }
@@ -1068,7 +1082,7 @@
     get boardOffered() { return boardOffered; },
     get obstacles() { return JSON.parse(JSON.stringify(OBSTACLES)); },
     get hitShape() { return BIRD_HIT.map((c) => ({ ...c })); },
-    get pipes() { return pipes.map((p) => ({ x: Math.round(p.x), type: p.type, w: p.w, gapY: Math.round(p.gapY) })); },
+    get pipes() { return pipes.map((p) => ({ x: Math.round(p.x), type: p.type, w: p.w, hitW: p.hitW, gap: Math.round(p.gap), gapY: Math.round(p.gapY) })); },
     restart() { if (state === 'dead') reset(); }, // used by the leaderboard overlay's "Play again"
   };
 })();
