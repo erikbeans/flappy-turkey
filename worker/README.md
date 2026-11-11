@@ -11,6 +11,8 @@ The static game is hosted on GitHub Pages and calls this API from the browser.
 | POST | `/api/run/start` | Start a run → `{ ok, runId, startedAt, token }` |
 | POST | `/api/score` | Submit a score → `{ ok, rank, entry }` (validated) |
 | GET | `/api/leaderboard?limit=N` | Top scores (N ≤ 100, default 10) → `{ ok, scores: [...] }` |
+| POST | `/api/stats` | Report a finished game's flaps + gates → `{ ok: true }` (validated like `/api/score`, single-use per run, separate from score submission) |
+| GET | `/api/stats` | Cumulative all-player stats → `{ ok, total: {flaps, gates}, today: {date, flaps, gates} }` — "today" is the current Pacific (America/Los_Angeles) calendar day |
 
 ## Server-side validation
 

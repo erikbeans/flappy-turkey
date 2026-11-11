@@ -21,3 +21,23 @@ CREATE TABLE IF NOT EXISTS rate_log (
   ts INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_rate_log ON rate_log(ip, ts);
+
+-- Cumulative all-player stats, reported by the game after each run.
+CREATE TABLE IF NOT EXISTS totals (
+  id    INTEGER PRIMARY KEY CHECK (id = 1),
+  flaps INTEGER NOT NULL DEFAULT 0,  -- all-time flaps by all players
+  gates INTEGER NOT NULL DEFAULT 0   -- all-time gates cleared by all players
+);
+
+CREATE TABLE IF NOT EXISTS daily (
+  date  TEXT PRIMARY KEY,            -- Pacific calendar date 'YYYY-MM-DD'
+  flaps INTEGER NOT NULL DEFAULT 0,  -- flaps since 00:00 Pacific
+  gates INTEGER NOT NULL DEFAULT 0   -- gates since 00:00 Pacific
+);
+
+CREATE TABLE IF NOT EXISTS stat_runs (
+  run_id      TEXT PRIMARY KEY,       -- single-use: one stats report per signed run
+  flaps       INTEGER NOT NULL,
+  gates       INTEGER NOT NULL,
+  reported_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

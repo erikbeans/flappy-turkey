@@ -157,3 +157,12 @@ body {
 
 #board-msg { min-height: 18px; margin-top: 6px; font-size: 13px; color: #7fffd4; }
 #board-msg.err { color: #ff8c5a; }
+
+/* cumulative all-player stats — deliberately small and muted */
+.board-stats {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+  opacity: 0.55;
+}

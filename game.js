@@ -90,7 +90,7 @@
   // ---------- Game state ----------
   let state;        // 'ready' | 'play' | 'dead'
   let bird, pipes, leaves, clouds, steam;
-  let score, best, distance, speed;
+  let score, best, distance, speed, flaps;
   let flapAnim, flash, deadTimer, leafAcc, steamAcc, elapsed;
   let restAt = 0;        // deadTimer when the roasted turkey came to rest
   let boardOffered = false; // leaderboard auto-opened once for this death
@@ -111,6 +111,7 @@
     leaves = [];
     steam = [];
     score = 0;
+    flaps = 0;
     distance = 0;
     speed = BASE_SPEED;
     flapAnim = 0;
@@ -146,6 +147,7 @@
   function flap() {
     bird.vy = FLAP_VY;
     flapAnim = 1;
+    flaps++; // counted for the cumulative all-player stats
     sfx.flap();
   }
 
@@ -275,6 +277,9 @@
       best = score;
       localStorage.setItem(BEST_KEY, String(best));
     }
+    // report this game's flaps/gates to the cumulative all-player stats — after EVERY
+    // game (even score 0), best-effort, and separate from any leaderboard submission
+    if (window.FLAPPY) window.FLAPPY.api.reportStats(flaps, score);
     // NOTE: the leaderboard is NOT opened here — update() offers it via
     // gameOverVisible(), so the player gets to watch the bounce first.
   }

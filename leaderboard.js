@@ -12,6 +12,7 @@
   const online = /^https?:\/\//.test(apiBase) && !apiBase.includes('REPLACE_ME');
   const NAME_KEY = 'flappyTurkeyName';
   const LOCAL_KEY = 'flappyTurkeyLocalBoard';
+  const STATS_KEY = 'flappyTurkeyStats';
   const TOP_N = 100; // the board keeps the top 100
 
   // ---------- API ----------
@@ -63,6 +64,37 @@
     }
   }
 
+  // Called by the game after EVERY run (game over), whether or not a score is submitted.
+  // Best-effort: never throws into the game loop.
+  async function reportStats(flaps, gates) {
+    if (!online) { localAddStats(flaps, gates); return { online: false }; }
+    if (!run) return null;
+    const durationMs = Math.max(0, Math.round(performance.now() - run.t0));
+    try {
+      // note: the run token stays valid for a later score submission — stats are tracked separately
+      await api('/api/stats', {
+        method: 'POST',
+        body: JSON.stringify({
+          runId: run.runId, startedAt: run.startedAt, token: run.token,
+          flaps, gates, durationMs,
+        }),
+      });
+      return { online: true };
+    } catch (e) {
+      return null; // best-effort only
+    }
+  }
+
+  async function fetchStats() {
+    if (!online) return { online: false, ...localStats() };
+    try {
+      const j = await api('/api/stats');
+      return { online: true, ...j };
+    } catch (e) {
+      return { online: false, ...localStats(), error: e.message };
+    }
+  }
+
   // ---------- local fallback (per-device board) ----------
   function localLoad() {
     try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || '[]'); } catch { return []; }
@@ -87,6 +119,37 @@
     };
   }
 
+  // ---------- local stats fallback (per-device, Pacific day) ----------
+  function localPacificDate() {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Los_Angeles',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
+  }
+
+  function localStats() {
+    let s = {};
+    try { s = JSON.parse(localStorage.getItem(STATS_KEY) || '{}'); } catch { s = {}; }
+    const day = localPacificDate();
+    const sameDay = s.day === day;
+    return {
+      total: { flaps: s.flaps || 0, gates: s.gates || 0 },
+      today: { date: day, flaps: sameDay ? (s.dayFlaps || 0) : 0, gates: sameDay ? (s.dayGates || 0) : 0 },
+    };
+  }
+
+  function localAddStats(flaps, gates) {
+    const cur = localStats();
+    const day = cur.today.date;
+    localStorage.setItem(STATS_KEY, JSON.stringify({
+      flaps: cur.total.flaps + flaps,
+      gates: cur.total.gates + gates,
+      day,
+      dayFlaps: cur.today.flaps + flaps,
+      dayGates: cur.today.gates + gates,
+    }));
+  }
+
   // ---------- UI ----------
   const $ = (id) => document.getElementById(id);
   let els = null;
@@ -106,6 +169,7 @@
       close: $('board-close'),
       again: $('board-again'),
       scoreLine: $('board-score'),
+      stats: $('board-stats'),
     };
     // Taps on the overlay must never flap the turkey — the game listens on window.
     for (const el of [els.btn, els.board]) {
@@ -153,6 +217,18 @@
       : (res.error
           ? `Online board unavailable (${res.error}) — showing local scores`
           : 'Offline mode — showing local scores');
+    renderStats(await fetchStats());
+  }
+
+  const fmt = (n) => Number(n || 0).toLocaleString('en-US');
+
+  // Cumulative all-player stats, shown discretely at the bottom of the panel
+  function renderStats(st) {
+    if (!st) return;
+    const scope = st.online ? 'All players' : 'This device';
+    els.stats.textContent =
+      `${scope}: ${fmt(st.total.flaps)} flaps · ${fmt(st.total.gates)} gates cleared` +
+      `   |   today (Pacific): ${fmt(st.today.flaps)} flaps · ${fmt(st.today.gates)} gates`;
   }
 
   const medals = ['🥇', '🥈', '🥉'];
@@ -213,7 +289,7 @@
   else document.addEventListener('DOMContentLoaded', initUI);
 
   window.FLAPPY = {
-    api: { startRun, submitScore, top },
+    api: { startRun, submitScore, top, reportStats, fetchStats },
     ui: { show, hide, refresh },
     get online() { return online; },
   };

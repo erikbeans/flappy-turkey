@@ -6,6 +6,8 @@
  *   POST /api/run/start           -> { ok, runId, startedAt, token }  token = HMAC-SHA256(runId|startedAt)
  *   POST /api/score               -> { ok, rank, entry }              validated score submission
  *   GET  /api/leaderboard?limit=N -> { ok, scores: [{ id, name, score, createdAt }] }  (N up to 100 — top 100)
+ *   POST /api/stats               -> { ok }                                   game reports flaps+gates after each run
+ *   GET  /api/stats               -> { ok, total: {flaps, gates}, today: {date, flaps, gates} }  (today = Pacific day)
  *
  * Server-side validation:
  *  - every score must carry a run token signed by the server when the run started
@@ -26,6 +28,9 @@ const MAX_DURATION_MS = 12 * 3600 * 1000;
 const MAX_NAME_LEN = 16;
 const RATE_WINDOW_MS = 60_000;
 const RATE_LIMIT = 6; // write requests per IP per window
+const FLAPS_PER_SEC_ALLOWANCE = 15; // humans tap far below this; generous anti-bot margin
+const FLAPS_SLACK = 20;
+const MAX_FLAPS = 1_000_000;
 
 const te = new TextEncoder();
 
@@ -140,6 +145,79 @@ async function leaderboard(url, env) {
   return { ok: true, scores: results };
 }
 
+// 'YYYY-MM-DD' for the current calendar day in Pacific time (America/Los_Angeles)
+function pacificDateStr(d = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(d);
+}
+
+// POST /api/stats — the game reports flaps + gates cleared after each run.
+// Validated with the same signed run token as score submission, but tracked
+// separately so stats count even when the player never submits a name.
+async function reportStats(env, request) {
+  const ip = clientIp(request);
+  if (await rateLimited(env, ip)) throw httpError(429, 'rate limited — slow down');
+  const body = await readJson(request);
+  const { runId, startedAt, token, flaps, gates, durationMs } = body;
+
+  if (typeof runId !== 'string' || typeof startedAt !== 'number' || typeof token !== 'string') {
+    throw httpError(400, 'missing run credentials');
+  }
+  if (typeof durationMs !== 'number' || !Number.isFinite(durationMs) || durationMs < 0 || durationMs > MAX_DURATION_MS) {
+    throw httpError(400, 'invalid duration');
+  }
+  if (!Number.isInteger(flaps) || flaps < 0 || flaps > MAX_FLAPS) {
+    throw httpError(400, `invalid flaps (0-${MAX_FLAPS})`);
+  }
+  const maxScore = Number(env.MAX_SCORE || 1000);
+  if (!Number.isInteger(gates) || gates < 0 || gates > maxScore) {
+    throw httpError(400, `invalid gates (0-${maxScore})`);
+  }
+
+  const run = await env.DB.prepare('SELECT started_at FROM runs WHERE run_id = ?').bind(runId).first();
+  if (!run) throw httpError(400, 'unknown run');
+  if (run.started_at !== startedAt) throw httpError(400, 'run start mismatch');
+  const expected = await hmacHex(env.SCORE_SECRET, `${runId}|${startedAt}`);
+  if (token !== expected) throw httpError(403, 'bad run token');
+  if (await env.DB.prepare('SELECT 1 FROM stat_runs WHERE run_id = ?').bind(runId).first()) {
+    throw httpError(409, 'stats already reported for this run');
+  }
+
+  // Plausibility vs elapsed time since the signed run start
+  const elapsedMs = Date.now() - run.started_at;
+  const elapsedS = Math.round(elapsedMs / 1000);
+  const maxGates = Math.floor((elapsedMs / 1000) * PTS_PER_SEC_ALLOWANCE) + SCORE_SLACK;
+  if (gates > maxGates) throw httpError(422, `gates ${gates} impossible in ${elapsedS}s (max ${maxGates})`);
+  const maxFlaps = Math.floor((elapsedMs / 1000) * FLAPS_PER_SEC_ALLOWANCE) + FLAPS_SLACK;
+  if (flaps > maxFlaps) throw httpError(422, `flaps ${flaps} impossible in ${elapsedS}s (max ${maxFlaps})`);
+
+  const date = pacificDateStr();
+  await env.DB.batch([
+    env.DB.prepare('INSERT INTO stat_runs (run_id, flaps, gates) VALUES (?, ?, ?)').bind(runId, flaps, gates),
+    env.DB.prepare('INSERT OR IGNORE INTO totals (id) VALUES (1)'),
+    env.DB.prepare('UPDATE totals SET flaps = flaps + ?, gates = gates + ? WHERE id = 1').bind(flaps, gates),
+    env.DB.prepare(
+      'INSERT INTO daily (date, flaps, gates) VALUES (?, ?, ?) ' +
+      'ON CONFLICT(date) DO UPDATE SET flaps = flaps + excluded.flaps, gates = gates + excluded.gates'
+    ).bind(date, flaps, gates),
+  ]);
+  return { ok: true };
+}
+
+// GET /api/stats — all-time totals + today's (Pacific) totals
+async function getStats(env) {
+  const total = (await env.DB.prepare('SELECT flaps, gates FROM totals WHERE id = 1').first()) || { flaps: 0, gates: 0 };
+  const date = pacificDateStr();
+  const today = (await env.DB.prepare('SELECT flaps, gates FROM daily WHERE date = ?').bind(date).first()) || { flaps: 0, gates: 0 };
+  return {
+    ok: true,
+    total: { flaps: total.flaps, gates: total.gates },
+    today: { date, flaps: today.flaps, gates: today.gates },
+  };
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -163,6 +241,8 @@ export default {
       if (url.pathname === '/api/run/start' && request.method === 'POST') return json(await startRun(env, request), 201);
       if (url.pathname === '/api/score' && request.method === 'POST') return json(await submitScore(env, request));
       if (url.pathname === '/api/leaderboard' && request.method === 'GET') return json(await leaderboard(url, env));
+      if (url.pathname === '/api/stats' && request.method === 'POST') return json(await reportStats(env, request));
+      if (url.pathname === '/api/stats' && request.method === 'GET') return json(await getStats(env));
       return json({ ok: false, error: 'not found' }, 404);
     } catch (e) {
       const status = e.status || 500;

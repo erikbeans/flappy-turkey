@@ -39,6 +39,10 @@ No build step and no dependencies. Either:
 
 - The **🏆 button** (top-left) opens the global leaderboard at any time — top 100 scores from all players.
 - After each game over (score > 0), the leaderboard opens automatically — but only once the roasted turkey has finished bouncing and come to rest, so the death animation always plays out first. The game-over panel waits for the same moment.
+- At the bottom of the board, small print shows **cumulative all-player stats**: total flaps and
+  gates cleared by everyone, plus today's counts since midnight **Pacific time**. The game reports
+  its flaps/gates to the server after every game over (validated with the same signed run token,
+  counted separately from leaderboard submissions, so even unsubmitted games count).
 - Scores are stored in a **Cloudflare Worker + D1** backend (`worker/`) with server-side validation:
   the server signs each run at start (HMAC token), scores are single-use, capped by elapsed time
   (the game can't score faster than ~0.91 pts/s), rate-limited per IP, and CORS-locked to the Pages origin.
