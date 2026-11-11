@@ -125,6 +125,7 @@
   }
 
   function show(score) {
+    if (!els) return; // UI not initialized yet
     pendingScore = score;
     els.scoreLine.textContent = score > 0 ? `Your score: ${score}` : '';
     els.form.style.display = score > 0 ? '' : 'none';
@@ -133,6 +134,7 @@
   }
 
   function hide() {
+    if (!els) return; // UI not initialized yet
     els.board.classList.add('hidden');
   }
 
@@ -205,8 +207,10 @@
     }
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initUI);
-  else initUI();
+  // The overlay markup sits above the <script> tags, so init immediately when
+  // possible (game.js calls ui.hide() during its initial reset()).
+  if (document.getElementById('board')) initUI();
+  else document.addEventListener('DOMContentLoaded', initUI);
 
   window.FLAPPY = {
     api: { startRun, submitScore, top },
