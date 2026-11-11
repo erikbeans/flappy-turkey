@@ -6,7 +6,7 @@ compatibility_date = "2026-10-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "flappy-turkey-scores"
-database_id = "REPLACE_AFTER_WRANGLER_D1_CREATE"
+database_id = "205ba92b-7aea-4526-b222-fd9fe9a5a3fe"
 
 [vars]
 # Comma-separated list of origins allowed to call the API (CORS):

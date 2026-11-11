@@ -8,5 +8,5 @@
  * scores are then kept in a per-device local leaderboard only.
  */
 window.FLAPPY_CONFIG = {
-  apiBase: 'REPLACE_ME_WITH_WORKER_URL',
+  apiBase: 'https://flappy-turkey-leaderboard.erikbeans.workers.dev',
 };

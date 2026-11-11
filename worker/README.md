@@ -60,7 +60,7 @@ Then point `config.js` at `http://127.0.0.1:8787` and run the game with
 ## Test with curl
 
 ```bash
-BASE=https://flappy-turkey-leaderboard.<subdomain>.workers.dev
+BASE=https://flappy-turkey-leaderboard.erikbeans.workers.dev
 ORIGIN=https://erikbeans.github.io
 
 # start a run
