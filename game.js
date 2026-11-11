@@ -18,26 +18,29 @@
   const FLAP_VY = -560;        // px/s, instant upward impulse on tap
   const MAX_FALL = 950;        // px/s, terminal velocity
   const BIRD_X = 120;          // turkey's fixed horizontal position
-  // Collision outline: local-space circles tracing the drawn turkey's shape.
-  // They are rotated with the bird and each tested against the obstacles,
-  // so the hitbox matches what you actually see on screen.
+  // Collision outline: local-space circles INSCRIBED in the drawn turkey's
+  // shapes (never larger than the sprite). Rotated with the bird and each
+  // tested against the obstacles, so the hitbox stays within what you see.
   const BIRD_HIT = [
-    { x: 0,    y: 0,   r: 17 },   // body
-    { x: 12,   y: 0,   r: 13 },
-    { x: -12,  y: 0,   r: 13 },
-    { x: 15,   y: -13, r: 11.5 }, // head
-    { x: 15,   y: -28, r: 7 },    // head tuft
-    { x: 28.5, y: -12, r: 6 },    // beak
-    { x: 24,   y: -4,  r: 5 },    // wattle
-    { x: -19,  y: 1,   r: 10 },   // tail fan
+    { x: 0,    y: 0,   r: 16 },    // body (inscribed in the 23x17 ellipse)
+    { x: 12,   y: 0,   r: 11 },
+    { x: -12,  y: 0,   r: 11 },
+    { x: 15,   y: -13, r: 11 },    // head (drawn r=11.5)
+    { x: 22.5, y: -18, r: 2.5 },   // snood
+    { x: 24.5, y: -5,  r: 3 },     // wattle
+    { x: 27,   y: -12, r: 3 },     // beak (inscribed in the triangle)
+    { x: -18,  y: 1,   r: 4.5 },   // tail fan base
   ];
-  // Obstacle types — each has its own width (some wider than the old pipe)
+  // Obstacle types — each has its own sprite width and a hitbox width.
+  // Rule: the hitbox never extends beyond the animated sprite.
   const OBSTACLES = {
-    oven:      { w: 108 },
-    fryer:     { w: 96 },
-    pitchfork: { w: 80 },
-    wires:     { w: 64 },
+    oven:      { w: 108, hitW: 108 }, // solid steel body — hitbox == sprite
+    fryer:     { w: 96,  hitW: 96  }, // solid vat (oil/handle overhang the gap, that's forgiving)
+    pitchfork: { w: 80,  hitW: 22  }, // narrow handle; full-width trident head added in pipeHitRects
+    wires:     { w: 64,  hitW: 36  }, // only the cable + sparking fringe, not the whole column
   };
+  const FORK_HANDLE_W = 22;  // must match the handle drawn in drawPitchfork
+  const FORK_HEAD_D = 34;    // depth of the trident head at the gap edge
   const MAX_GAP_JUMP = 210;    // max vertical move between consecutive gaps (guarantees a path)
   const BASE_GAP = 180;        // starting gap between obstacles
   const MIN_GAP = 142;         // smallest gap (at high scores)
@@ -89,6 +92,8 @@
   let bird, pipes, leaves, clouds, steam;
   let score, best, distance, speed;
   let flapAnim, flash, deadTimer, leafAcc, steamAcc, elapsed;
+  let restAt = 0;        // deadTimer when the roasted turkey came to rest
+  let boardOffered = false; // leaderboard auto-opened once for this death
 
   best = parseInt(localStorage.getItem(BEST_KEY) || '0', 10) || 0;
   let muted = localStorage.getItem(MUTE_KEY) === '1';
@@ -114,6 +119,8 @@
     leafAcc = 0;
     steamAcc = 0;
     elapsed = 0;
+    restAt = 0;
+    boardOffered = false;
     state = 'ready';
   }
 
@@ -193,7 +200,7 @@
     const types = Object.keys(OBSTACLES);
     const type = types[(Math.random() * types.length) | 0];
     const x = pipes.length ? pipes[pipes.length - 1].x + PIPE_SPACING : W + 80;
-    pipes.push({ x, gapY, gap, type, w: OBSTACLES[type].w, scored: false });
+    pipes.push({ x, gapY, gap, type, w: OBSTACLES[type].w, hitW: OBSTACLES[type].hitW, scored: false });
   }
 
   function circleRect(cx, cy, r, rx, ry, rw, rh) {
@@ -220,10 +227,30 @@
     return { circles, minX, maxX, minY, maxY };
   }
 
+  // Hitbox rects for an obstacle, always a subset of its drawn sprite.
+  function pipeHitRects(p, top, bot) {
+    const rects = [];
+    const push = (x, y, w, h) => { if (w > 0 && h > 0) rects.push({ x, y, w, h }); };
+    if (p.type === 'pitchfork') {
+      // full-width trident head at the gap edge; narrow handle behind it
+      push(p.x, Math.max(-20, top - FORK_HEAD_D), p.w, Math.min(FORK_HEAD_D, top + 20));
+      const hx = p.x + (p.w - FORK_HANDLE_W) / 2;
+      push(hx, -20, FORK_HANDLE_W, Math.max(0, top - FORK_HEAD_D + 20));
+      push(p.x, bot, p.w, Math.min(FORK_HEAD_D, H - bot + 20));
+      push(hx, bot + FORK_HEAD_D, FORK_HANDLE_W, H - bot + 20 - FORK_HEAD_D);
+    } else {
+      const hx = p.x + (p.w - p.hitW) / 2;
+      push(hx, -20, p.hitW, top + 20);
+      push(hx, bot, p.hitW, H - bot + 20);
+    }
+    return rects;
+  }
+
   function hitsPipe(p, circles, top, bot) {
-    for (const c of circles) {
-      if (circleRect(c.x, c.y, c.r, p.x, -20, p.w, top + 20) ||
-          circleRect(c.x, c.y, c.r, p.x, bot, p.w, H - bot + 20)) return true;
+    for (const r of pipeHitRects(p, top, bot)) {
+      for (const c of circles) {
+        if (circleRect(c.x, c.y, c.r, r.x, r.y, r.w, r.h)) return true;
+      }
     }
     return false;
   }
@@ -243,14 +270,19 @@
       bird.vy = 0; bird.vx = 0; bird.resting = true; // already on the floor
     }
     sfx.hit();
+    restAt = 0; // ground deaths are already resting; obstacle deaths set this on landing
     if (score > best) {
       best = score;
       localStorage.setItem(BEST_KEY, String(best));
     }
-    // offer the global leaderboard once the game-over panel is up
-    if (window.FLAPPY && score > 0) {
-      setTimeout(() => { if (state === 'dead') window.FLAPPY.ui.show(score); }, 700);
-    }
+    // NOTE: the leaderboard is NOT opened here — update() offers it via
+    // gameOverVisible(), so the player gets to watch the bounce first.
+  }
+
+  // The game-over panel (and the leaderboard offer) appear only after the
+  // roasted turkey has landed and settled for a beat — never mid-bounce.
+  function gameOverVisible() {
+    return state === 'dead' && ((bird.resting && deadTimer >= restAt + 0.6) || deadTimer > 5);
   }
 
   // ---------- Update ----------
@@ -371,6 +403,7 @@
           } else {
             bird.vy = 0;
             bird.resting = true;
+            restAt = deadTimer;
             flash = 1;
             sfx.hit();
           }
@@ -383,6 +416,11 @@
         const ext = birdExtents();
         if (ext.minX < 0) bird.x -= ext.minX;
         if (ext.maxX > W) bird.x -= (ext.maxX - W);
+      }
+      // once the game-over panel is up, auto-open the leaderboard (once per death)
+      if (!boardOffered && score > 0 && gameOverVisible() && window.FLAPPY) {
+        boardOffered = true;
+        window.FLAPPY.ui.show(score);
       }
     }
 
@@ -938,8 +976,8 @@
 
   function drawUI() {
     drawMuteButton();
-    if (state === 'play' || (state === 'dead' && deadTimer < 0.55)) {
-      text(String(score), W / 2, 92, 52);
+    if (state === 'play' || state === 'dead') {
+      text(String(score), W / 2, 92, 52); // stays up while the roasted turkey bounces
     }
     if (state === 'ready') {
       text('FLAPPY', W / 2, H * 0.20, 42, '#ffd66b');
@@ -951,7 +989,9 @@
       ctx.globalAlpha = 1;
       if (best > 0) text('Best: ' + best, W / 2, H * 0.60 + 66, 18, '#ffd66b', 'center', 'rgba(60,20,0,0.7)', 4);
     }
-    if (state === 'dead' && deadTimer > 0.55 && (bird.resting || deadTimer > 2.5)) {
+    // game-over panel waits until the roasted turkey has landed and settled
+    // (5s fallback so it can never get stuck hidden)
+    if (gameOverVisible()) {
       const px = W / 2 - 150, py = H * 0.30, pw = 300, ph = 215;
       ctx.fillStyle = 'rgba(30,12,8,0.85)';
       roundRect(px, py, pw, ph, 16); ctx.fill();
@@ -1018,6 +1058,10 @@
     get roasted() { return bird ? !!bird.roasted : false; },
     get resting() { return bird ? !!bird.resting : false; },
     get rot() { return bird ? bird.rot : 0; },
+    get deadTimer() { return deadTimer; },
+    get gameOverShown() { return gameOverVisible(); },
+    get boardOffered() { return boardOffered; },
+    get obstacles() { return JSON.parse(JSON.stringify(OBSTACLES)); },
     get hitShape() { return BIRD_HIT.map((c) => ({ ...c })); },
     get pipes() { return pipes.map((p) => ({ x: Math.round(p.x), type: p.type, w: p.w, gapY: Math.round(p.gapY) })); },
     restart() { if (state === 'dead') reset(); }, // used by the leaderboard overlay's "Play again"

@@ -32,12 +32,13 @@ No build step and no dependencies. Either:
 - A path through every gap is always guaranteed: gap centers never jump more than 210px between obstacles, and the gap never shrinks below what fits the turkey.
 - Each obstacle you pass = 1 point. Best score is saved in `localStorage`.
 - The game speeds up and the gaps shrink slightly as your score grows.
-- Hit an obstacle and the turkey gets **roasted** 🥘 — it tumbles, bounces off the floor a couple of times, and comes to rest. That's game over.
+- Hit an obstacle and the turkey gets **roasted** 🥘 — it tumbles, bounces off the floor a couple of times, and comes to rest. The game-over panel only appears once the turkey is lying on the ground.
+- Hitboxes always stay **within the drawn sprites**: obstacles only hurt where you see them (live wires are only dangerous at the cable and its sparks), and the turkey's collision outline is inscribed in its body — no invisible edges.
 
 ## Global leaderboard (top 100) 🏆
 
 - The **🏆 button** (top-left) opens the global leaderboard at any time — top 100 scores from all players.
-- After each game over (score > 0), the leaderboard opens automatically: enter your name and hit **Submit** to add your score.
+- After each game over (score > 0), the leaderboard opens automatically — but only once the roasted turkey has finished bouncing and come to rest, so the death animation always plays out first. The game-over panel waits for the same moment.
 - Scores are stored in a **Cloudflare Worker + D1** backend (`worker/`) with server-side validation:
   the server signs each run at start (HMAC token), scores are single-use, capped by elapsed time
   (the game can't score faster than ~0.91 pts/s), rate-limited per IP, and CORS-locked to the Pages origin.
