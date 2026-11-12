@@ -44,7 +44,7 @@
     wires:     { w: 64,  hitW: 36  }, // only the cable + sparking fringe, not the whole column
   };
   const FORK_HANDLE_W = 22;  // must match the handle drawn in drawPitchfork
-  const FORK_HEAD_D = 34;    // depth of the trident head at the gap edge
+  const FORK_HEAD_D = 40;    // depth of the trident head at the gap edge
   const MAX_GAP_JUMP = 200;    // max vertical move between consecutive gaps (guarantees a path)
   const BASE_GAP = 168;        // starting gap between obstacles
   const MIN_GAP = 132;         // smallest gap (at high scores) — still fits the turkey

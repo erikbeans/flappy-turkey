@@ -32,7 +32,7 @@ No build step and no dependencies. Either:
 - A path through every gap is always guaranteed: gap centers never jump more than 210px between obstacles, and the gap never shrinks below what fits the turkey.
 - Each obstacle you pass = 1 point. Best score is saved in `localStorage`.
 - The game speeds up and the gaps shrink slightly as your score grows.
-- Hit an obstacle and the turkey gets **roasted** 🥘 — it tumbles, bounces off the floor a couple of times, and comes to rest. The game-over panel only appears once the turkey is lying on the ground.
+- Hit an obstacle and the game **freezes at the moment of impact** — tap the screen to step the roasted-turkey bounce 🥘 forward one beat at a time. The turkey tumbles, bounces off the floor a couple of times, and comes to rest; the game-over panel appears once it's lying on the ground, and a final tap starts a new round.
 - Hitboxes always stay **within the drawn sprites**: obstacles only hurt where you see them (live wires are only dangerous at the cable and its sparks), and the turkey's collision outline is inscribed in its body — no invisible edges.
 
 ## Global leaderboard (top 100) 🏆
@@ -74,3 +74,63 @@ No build step and no dependencies. Either:
 All gameplay constants (gravity, flap impulse, pipe speed/gap, obstacle spacing)
 live at the top of `game.js` in the "Tuning constants" section — tweak them to
 change the feel of the game.
+
+### Difficulty in numbers (current values)
+
+The canvas is **432×768 px**, the ground takes the bottom **92 px**, so the playable
+height is **676 px**. The turkey's hitbox (`BIRD_HIT`, 11 circles) is about
+**66 px wide × 49 px tall**.
+
+**Physics (how the turkey flies):**
+
+| Quantity | Formula | Current value |
+| --- | --- | --- |
+| Flap apex height | `FLAP_VY² / (2·GRAVITY)` | 560²/3800 = **82.5 px** (~12% of playable height) |
+| Time to flap apex | `FLAP_VY / GRAVITY` | **0.29 s** (full up-down cycle ≈ 0.59 s) |
+| Time to terminal fall speed | `MAX_FALL / GRAVITY` | **0.5 s** (covers 237 px) |
+| Full-screen fall from rest | — | **≈ 0.96 s** |
+
+**Obstacle flow (how the world scrolls), by score `s`:**
+
+| Quantity | Formula | Value at s=0 | Value at max |
+| --- | --- | --- | --- |
+| Scroll speed | `BASE_SPEED + min(MAX_SPEED_BONUS, SPEED_RAMP·s)` | 186 px/s | **286 px/s** (reached at s≈45) |
+| Reaction time between obstacles | `PIPE_SPACING / speed` | **1.51 s** | **0.98 s** (−35%) |
+| Gap size | `max(MIN_GAP, BASE_GAP − GAP_SHRINK·s)` | 168 px | **132 px** (at s≈28) |
+| Clearance per side of turkey | `(gap − 49)/2` | 59.5 px | **41.5 px** |
+| Live-wires effective gap | `max(136, gap − ELEC_SHRINK)` | 144 px | **136 px** (43.5 px/side) |
+| Fryer vat bulge eats | 18 px into the gap, each side | eff. clearance 41.5 px/side | **23.5 px/side** |
+| Pitchfork trident head | full 80 px wide × 34 px deep at gap edge | — | — |
+| Time spent inside an obstacle | `hitW / speed` | oven 0.58 s · fryer 0.52 s · pitchfork head 0.18 s · wires 0.19 s | oven 0.38 s … |
+| Obstacle mix | uniform over 4 types | **25% each** | — |
+| Gap-center vertical range | margin 130 top/bottom | [214, 462] → **248 px** of room | shrinks with gap |
+| Max gap-center jump between obstacles | `MAX_GAP_JUMP` | **200 px** (guaranteed reachable) | — |
+| Max theoretical score rate | `speed / PIPE_SPACING` | 0.66 pts/s | 1.02 pts/s |
+
+### Which knob makes it harder (increase the value)
+
+| Knob | Harder when… | Notes |
+| --- | --- | --- |
+| `GRAVITY` | ↑ increased | faster falls, lower flap apex (`h ∝ 1/GRAVITY`) |
+| `FLAP_VY` (negative) | ↓ closer to 0 | weaker flap — apex is quadratic: `h ∝ FLAP_VY²`, so −10% flap = −19% height |
+| `MAX_FALL` | ↑ | harder to recover from dives |
+| `BASE_SPEED` | ↑ | reaction time = `PIPE_SPACING / speed` |
+| `SPEED_RAMP` | ↑ | max speed reached at score `MAX_SPEED_BONUS / SPEED_RAMP` |
+| `MAX_SPEED_BONUS` | ↑ | higher top speed |
+| `PIPE_SPACING` | ↓ decreased | **inverted**: less reaction time |
+| `BASE_GAP` / `MIN_GAP` | ↓ decreased | smaller gaps; clearance/side = `(gap − 49)/2` |
+| `GAP_SHRINK` | ↑ | min gap reached at score `(BASE_GAP − MIN_GAP)/GAP_SHRINK` |
+| `MAX_GAP_JUMP` | ↓ decreased | **inverted**: less vertical freedom between gaps |
+| `ELEC_SHRINK` | ↑ | live wires eat more of the gap |
+| obstacle `w` / `hitW` | ↑ | longer exposure per obstacle |
+| spawn `margin` (130) | ↓ decreased | **inverted**: gaps can hug the top/bottom edges |
+
+### Asking for a change in plain terms
+
+You can ask in terms of the metrics above, e.g.:
+
+- *"Reaction time should never drop below 1.2 s"* → set `PIPE_SPACING ≥ 1.2 × (BASE_SPEED + MAX_SPEED_BONUS)` = 343
+- *"Gap should never go below 120 px"* → `MIN_GAP = 120` (≈35 px clearance per side)
+- *"Top speed at score 30"* → `SPEED_RAMP = MAX_SPEED_BONUS / 30`
+- *"Flap should reach 100 px high"* → `FLAP_VY = −√(2·GRAVITY·100)` ≈ −616
+- *"Easier early game, brutal late game"* → lower `BASE_SPEED`/`BASE_GAP`, raise `SPEED_RAMP`/`GAP_SHRINK`, lower `MIN_GAP`
