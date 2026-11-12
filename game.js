@@ -355,9 +355,9 @@
       push(p.x, top, p.w, BUSH_LIP);
       push(p.x, bot - BUSH_LIP, p.w, BUSH_LIP);
     } else if (p.type === 'chocolate') {
-      // only the floating block flush with the gap edge is solid; the rest of the column is sky
-      push(p.x, Math.max(-20, top - CHOC_D), p.w, Math.min(CHOC_D, top + 20));
-      push(p.x, bot, p.w, Math.min(CHOC_D, H - bot + 20));
+      // the block bulges CHOC_D into the gap — hitbox == the drawn block, nothing else is solid
+      push(p.x, top, p.w, Math.min(CHOC_D, H - top + 20));
+      push(p.x, Math.max(-20, bot - CHOC_D), p.w, Math.min(CHOC_D, bot + 20));
     } else {
       const hx = p.x + (p.w - p.hitW) / 2;
       push(hx, -20, p.hitW, top + 20);
@@ -600,9 +600,11 @@
       } else {
         bird.rot += (bird.vx >= 0 ? 1 : -1) * (3 + Math.abs(bird.vy) * 0.008) * dt;
       }
+    } else if (bird.onGround) {
+      bird.rot *= Math.max(0, 1 - 30 * dt); // snap horizontal immediately when running
     } else {
-      // upright while running on the ground; nose up on flap, nose-dive when falling
-      const target = bird.onGround ? 0 : (bird.vy < 0 ? -0.42 : Math.min(1.45, (bird.vy / MAX_FALL) * 1.5));
+      // nose up on flap, nose-dive when falling
+      const target = bird.vy < 0 ? -0.42 : Math.min(1.45, (bird.vy / MAX_FALL) * 1.5);
       bird.rot += (target - bird.rot) * Math.min(1, dt * (bird.vy < 0 ? 14 : 5));
     }
   }
@@ -1570,8 +1572,9 @@
       }
       ctx.closePath(); ctx.fill(); ctx.stroke();
     } else if (p.type === 'chocolate') {
-      // floating chocolate block flush with the gap edge — nothing behind it but sky
-      const by = isTop ? edgeY - CHOC_D : edgeY;
+      // floating chocolate block that bulges CHOC_D INTO the gap from the edge,
+      // so it costs real clearance (nothing behind it but sky)
+      const by = isTop ? edgeY : edgeY - CHOC_D;
       const g = ctx.createLinearGradient(x, 0, x + w, 0);
       g.addColorStop(0, '#5d3a1a'); g.addColorStop(0.5, '#8a5a2b'); g.addColorStop(1, '#4a2a10');
       ctx.fillStyle = g;
@@ -1676,16 +1679,16 @@
     if (bird.onGround) ctx.translate(0, -Math.abs(Math.sin(walkCycle * 0.05)) * 2.5); // run bob
     ctx.rotate(bird.rot);
 
-    // little legs while running along the ground (Sonya Mode)
+    // long little legs while running along the ground (Sonya Mode)
     if (bird.onGround) {
       const sw = Math.sin(walkCycle * 0.05);
-      ctx.strokeStyle = pal.beak; ctx.lineWidth = 4; ctx.lineCap = 'round';
+      ctx.strokeStyle = pal.beak; ctx.lineWidth = 4.5; ctx.lineCap = 'round';
       for (const s of [-1, 1]) {
-        const lx = s * 7;
-        const footX = lx + s * 3 * sw;
-        const footY = 19 - Math.max(0, s * sw) * 5;
-        ctx.beginPath(); ctx.moveTo(lx, 10); ctx.lineTo(footX, footY); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(footX - 3, footY); ctx.lineTo(footX + 4, footY); ctx.stroke();
+        const hipX = s * 8, hipY = 0;
+        const footX = hipX + s * 5 * sw;
+        const footY = 20 - Math.max(0, s * sw) * 6; // one foot lifts mid-stride
+        ctx.beginPath(); ctx.moveTo(hipX, hipY); ctx.lineTo(footX, footY); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(footX - 4, footY); ctx.lineTo(footX + 4, footY); ctx.stroke(); // foot
       }
     }
 
