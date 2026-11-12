@@ -291,12 +291,12 @@
     const type = types[(Math.random() * types.length) | 0];
     let x;
     if (pipes.length) {
-      // Sonya Mode: uneven spacing — sometimes a series of 1-3 obstacle slots
-      // are skipped, leaving open ground the turkey can land on
+      // Sonya Mode: uneven spacing — sometimes 1-2 obstacle slots are skipped,
+      // leaving open ground the turkey can land on (max gap = 3 slots = 1080px)
       let slots = 1;
       if (cfg.unevenSpacing) {
         const r = Math.random();
-        slots = r < 0.62 ? 1 : r < 0.84 ? 2 : r < 0.95 ? 3 : 4; // 0..3 missing obstacles
+        slots = r < 0.70 ? 1 : r < 0.92 ? 2 : 3; // 0..2 missing obstacles
       }
       x = pipes[pipes.length - 1].x + cfg.pipeSpacing * slots;
     } else {
