@@ -10,7 +10,7 @@ The static game is hosted on GitHub Pages and calls this API from the browser.
 | GET | `/api/health` | Liveness check → `{ ok: true }` |
 | POST | `/api/run/start` | Start a run → `{ ok, runId, startedAt, token }` |
 | POST | `/api/score` | Submit a score → `{ ok, rank, entry }` (validated) |
-| GET | `/api/leaderboard?limit=N` | Top scores (N ≤ 100, default 10) → `{ ok, scores: [...] }` |
+| GET | `/api/leaderboard?limit=N` | Top scores (N ≤ 100, default 10) → `{ ok, scores: [...], players1h }` — `players1h` = unique player IPs that started or finished a run in the last hour (from the `activity` table) |
 | POST | `/api/stats` | Report a finished game's flaps + gates → `{ ok: true }` (validated like `/api/score`, single-use per run, separate from score submission) |
 | GET | `/api/stats` | Cumulative all-player stats → `{ ok, total: {flaps, gates}, today: {date, flaps, gates} }` — "today" is the current Pacific (America/Los_Angeles) calendar day |
 
@@ -26,7 +26,7 @@ A plain client-side game can't prove a score, but we make casual forgery hard:
   (268 px/s max speed ÷ 295 px obstacle spacing), so the server allows at most
   1.5 pts/s + 5 points of slack. A "9999 in 3 seconds" submission is rejected with 422.
 - Absolute score cap (`MAX_SCORE` var), name sanitation (1–16 chars, control chars stripped),
-  body size limit, per-IP, per-endpoint rate limiting (run/start 30/min, score 20/min, stats 20/min — shared-NAT safe), and CORS restricted to
+  body size limit, per-IP, per-endpoint rate limiting (run/start 30/min, score 20/min, stats 20/min — shared-NAT safe), play-activity logging to the `activity` table (one row per `run/start` and per `stats` report, pruned to 2h), and CORS restricted to
   `ALLOWED_ORIGINS` (the GitHub Pages origin + localhost for dev).
 
 ## Deploy

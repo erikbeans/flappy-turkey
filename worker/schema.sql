@@ -22,6 +22,14 @@ CREATE TABLE IF NOT EXISTS rate_log (
 );
 CREATE INDEX IF NOT EXISTS idx_rate_log ON rate_log(ip, ts);
 
+-- One row per play event (run start / stats report), keyed by client IP.
+-- Only used to count DISTINCT players active in the last hour; never shown per-player.
+CREATE TABLE IF NOT EXISTS activity (
+  ip TEXT NOT NULL,
+  ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_activity_ts ON activity(ts);
+
 -- Cumulative all-player stats, reported by the game after each run.
 CREATE TABLE IF NOT EXISTS totals (
   id    INTEGER PRIMARY KEY CHECK (id = 1),

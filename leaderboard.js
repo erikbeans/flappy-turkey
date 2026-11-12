@@ -58,7 +58,7 @@
     if (!online) return { online: false, scores: localTop(limit) };
     try {
       const j = await api('/api/leaderboard?limit=' + Math.min(limit, TOP_N));
-      return { online: true, scores: j.scores };
+      return { online: true, scores: j.scores, players1h: j.players1h };
     } catch (e) {
       return { online: false, scores: localTop(limit), error: e.message };
     }
@@ -213,7 +213,8 @@
     const res = await top(TOP_N);
     renderList(res.scores);
     els.status.textContent = res.online
-      ? `Top ${Math.min(res.scores.length, TOP_N)} of the global board`
+      ? `Top ${Math.min(res.scores.length, TOP_N)} of the global board · ` +
+        `${fmt(res.players1h)} player${res.players1h === 1 ? '' : 's'} in the last hour`
       : (res.error
           ? `Online board unavailable (${res.error}) — showing local scores`
           : 'Offline mode — showing local scores');

@@ -5,7 +5,8 @@
  *   GET  /api/health              -> { ok: true }
  *   POST /api/run/start           -> { ok, runId, startedAt, token }  token = HMAC-SHA256(runId|startedAt)
  *   POST /api/score               -> { ok, rank, entry }              validated score submission
- *   GET  /api/leaderboard?limit=N -> { ok, scores: [{ id, name, score, createdAt }] }  (N up to 100 — top 100)
+ *   GET  /api/leaderboard?limit=N -> { ok, scores: [...], players1h }  (N up to 100 — top 100;
+ *                                    players1h = unique player IPs active in the last hour)
  *   POST /api/stats               -> { ok }                                   game reports flaps+gates after each run
  *   GET  /api/stats               -> { ok, total: {flaps, gates}, today: {date, flaps, gates} }  (today = Pacific day)
  *
@@ -66,6 +67,14 @@ async function rateLimited(env, ip, scope) {
   return false;
 }
 
+// One row per play event; pruned to a 2h window so the table stays tiny.
+// Powers the "unique players in the last hour" count on the leaderboard.
+async function logActivity(env, ip) {
+  const now = Date.now();
+  await env.DB.prepare('INSERT INTO activity (ip, ts) VALUES (?, ?)').bind(ip, now).run();
+  await env.DB.prepare('DELETE FROM activity WHERE ts < ?').bind(now - 2 * 3600 * 1000).run();
+}
+
 async function readJson(request) {
   const raw = await request.text();
   if (raw.length > 4096) throw Object.assign(new Error('body too large'), { status: 413 });
@@ -83,6 +92,7 @@ function httpError(status, message) {
 async function startRun(env, request) {
   const ip = clientIp(request);
   if (await rateLimited(env, ip, 'run/start')) throw httpError(429, 'rate limited — slow down');
+  await logActivity(env, ip);
   const runId = crypto.randomUUID();
   const startedAt = Date.now();
   await env.DB.prepare('INSERT INTO runs (run_id, started_at) VALUES (?, ?)').bind(runId, startedAt).run();
@@ -145,6 +155,7 @@ async function submitScore(env, request) {
 }
 
 const MAX_LEADERBOARD_LIMIT = 100; // the board keeps the top 100
+const ACTIVITY_WINDOW_MS = 3600 * 1000; // "players in the last hour"
 
 async function leaderboard(url, env) {
   let limit = parseInt(url.searchParams.get('limit') || '10', 10);
@@ -153,7 +164,10 @@ async function leaderboard(url, env) {
   const { results } = await env.DB.prepare(
     'SELECT id, name, score, created_at AS createdAt FROM scores ORDER BY score DESC, created_at ASC, id ASC LIMIT ?'
   ).bind(limit).all();
-  return { ok: true, scores: results };
+  const playersRow = await env.DB.prepare(
+    'SELECT COUNT(DISTINCT ip) AS c FROM activity WHERE ts >= ?'
+  ).bind(Date.now() - ACTIVITY_WINDOW_MS).first();
+  return { ok: true, scores: results, players1h: (playersRow && playersRow.c) || 0 };
 }
 
 // 'YYYY-MM-DD' for the current calendar day in Pacific time (America/Los_Angeles)
@@ -195,6 +209,7 @@ async function reportStats(env, request) {
   if (await env.DB.prepare('SELECT 1 FROM stat_runs WHERE run_id = ?').bind(runId).first()) {
     throw httpError(409, 'stats already reported for this run');
   }
+  await logActivity(env, ip); // a finished run also counts as active play
 
   // Plausibility vs elapsed time since the signed run start
   const elapsedMs = Date.now() - run.started_at;
