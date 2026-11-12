@@ -35,9 +35,16 @@ No build step and no dependencies. Either:
 - Hit an obstacle and the turkey gets **roasted** 🥘 — it tumbles, bounces off the floor a couple of times, and comes to rest. The game-over panel only appears once the turkey is lying on the ground.
 - Hitboxes match the drawn sprites: obstacles only hurt where you see them (live wires are only dangerous at the cable and its sparks, pitchforks at handle + trident head, fryers including the oil bulge), and the turkey's collision outline covers its visible body — no invisible edges, no unpunished overlaps.
 
+## Game modes 🎮
+
+- **🦃 Calvin Mode** — the original game described above: difficulty ramps with score, touching the ground ends the run.
+- **🌈 Sonya Mode** — a much easier, friendlier mode: one fixed easy difficulty for the whole game (gap 210px, speed 140px/s, spacing 360px, gentler gap jumps), a randomly recolored crazy bird (purple/teal/yellow/…) each run, friendly obstacles (bushes, fence posts, flower bushes, happy chocolates), **uneven obstacle spacing** (runs of 1–3 missing obstacles), and the turkey can **walk/run along the ground** instead of dying there. The scenery still changes with score, same as Calvin Mode.
+- The mode is picked on the ready screen at the start of each session (last choice remembered). Leaderboards are **separate per mode** (tabs on the 🏆 panel); cumulative flap/gate stats are combined across modes.
+- While Sonya Mode is in development it is hidden behind a dev flag: set `localStorage.flappyDev = '1'` to see the picker and the Sonya tab. **At launch, remove the `devUnlocked` gate in `game.js`/`leaderboard.js`.**
+
 ## Global leaderboard (top 100) 🏆
 
-- The **🏆 button** (top-left) opens the global leaderboard at any time — top 100 scores from all players.
+- The **🏆 button** (top-left) opens the global leaderboard at any time — top 100 scores from all players, with a tab per game mode.
 - After each game over (score > 0), the leaderboard opens automatically — but only once the roasted turkey has finished bouncing and come to rest, so the death animation always plays out first. The game-over panel waits for the same moment.
 - At the bottom of the board, small print shows **cumulative all-player stats**: total flaps and
   gates cleared by everyone, plus today's counts since midnight **Pacific time**. The game reports

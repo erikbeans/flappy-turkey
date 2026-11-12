@@ -56,6 +56,64 @@
   const GROUND_H = 92;
   const ELEC_SHRINK = 24;      // electric aura eats only this much of the safe gap
   const ROAST_BOUNCES = 2;     // floor bounces after the turkey is roasted
+
+  // ---------- Game modes ----------
+  // Calvin Mode = the original game. Sonya Mode = much easier + friendlier:
+  // one fixed easy difficulty for the whole game, the turkey can walk/run on
+  // the ground (landing is safe), and obstacle spacing is uneven (runs of 1-3
+  // missing obstacles give frequent chances to land). Scenes still follow the
+  // same score-based pattern as Calvin Mode.
+  // Sonya Mode is UNPUBLISHED during development: the picker is gated behind
+  // localStorage.flappyDev === '1' (see devUnlocked). LAUNCH: remove the gate.
+  const SONYA_OBSTACLES = {
+    bush:      { w: 100, hitW: 100 }, // leafy bush filling the column — hitbox == sprite (+ leaf lip)
+    fence:     { w: 44,  hitW: 44  }, // one wooden fence post — only the post is solid
+    flowers:   { w: 92,  hitW: 92  }, // bush with flowers on the face — hitbox == sprite (+ lip)
+    chocolate: { w: 84,  hitW: 84  }, // floating chocolate block flush with the gap edge (hitbox = block only)
+  };
+  const CHOC_D = 34;   // chocolate block depth at the gap edge (must match drawFriendly + pipeHitRects)
+  const BUSH_LIP = 16; // how far the scalloped leafy face bulges into the gap (hitbox includes it)
+  const MODES = {
+    calvin: {
+      name: 'Calvin Mode', icon: '🦃',
+      baseGap: BASE_GAP, minGap: MIN_GAP, gapShrink: GAP_SHRINK,
+      baseSpeed: BASE_SPEED, speedRamp: SPEED_RAMP, maxSpeedBonus: MAX_SPEED_BONUS,
+      pipeSpacing: PIPE_SPACING, maxGapJump: MAX_GAP_JUMP,
+      obstacles: OBSTACLES, groundKills: true, unevenSpacing: false, palette: 'turkey',
+    },
+    sonya: {
+      name: 'Sonya Mode', icon: '🌈',
+      baseGap: 210, minGap: 210, gapShrink: 0,         // one easy gap size, forever
+      baseSpeed: 140, speedRamp: 0, maxSpeedBonus: 0,  // one easy speed, forever
+      pipeSpacing: 360, maxGapJump: 120,               // roomier spacing, gentler gap moves
+      obstacles: SONYA_OBSTACLES,
+      groundKills: false,                               // touching the ground = walk/run, not death
+      unevenSpacing: true,                              // sometimes 1-3 obstacle slots are skipped
+      palette: 'crazy',
+    },
+  };
+
+  // Calvin Mode keeps the classic turkey look; Sonya Mode rolls a random crazy
+  // palette (purple / teal blue / yellow / ...) fresh on every run.
+  const TURKEY_PAL = {
+    body: '#8f4f1d', belly: '#d99a55', wing: '#6e3a12', wingLine: 'rgba(74,36,8,0.7)',
+    stroke: '#5d3313', wingStroke: '#4a2408',
+    tail: ['#b03a2e', '#d35400', '#f39c12', '#ca6f1e', '#a04000', '#e59866', '#922b21'],
+    beak: '#f5a623', beakStroke: '#c77f0a', snood: '#e74c3c', blush: 'rgba(231,76,60,0.45)',
+  };
+  const CRAZY_COLORS = ['#a55eea', '#26de81', '#fed330', '#fc5c65', '#45aaf2', '#fd9644', '#2bcbba', '#eb3b5a', '#8854d0', '#20bf6b', '#f7b731', '#00cec9'];
+  function crazyPalette() {
+    const pick = () => CRAZY_COLORS[(Math.random() * CRAZY_COLORS.length) | 0];
+    const body = pick();
+    let wing = pick(); while (wing === body) wing = pick();
+    const tail = []; for (let i = 0; i < 7; i++) tail.push(pick());
+    return {
+      body, belly: pick(), wing, wingLine: 'rgba(20,10,40,0.45)',
+      stroke: 'rgba(25,12,45,0.9)', wingStroke: 'rgba(25,12,45,0.9)',
+      tail, beak: pick(), beakStroke: 'rgba(25,12,45,0.9)', snood: pick(),
+      blush: 'rgba(255,255,255,0.4)',
+    };
+  }
   const BEST_KEY = 'flappyTurkeyBest';
   const MUTE_KEY = 'flappyTurkeyMuted';
   // sound toggle button: a small circle in the top-right corner (internal canvas coords)
@@ -104,6 +162,22 @@
   best = parseInt(localStorage.getItem(BEST_KEY) || '0', 10) || 0;
   let muted = localStorage.getItem(MUTE_KEY) === '1';
 
+  // ---------- Mode selection ----------
+  const MODE_KEY = 'flappyTurkeyMode';
+  const DEV_KEY = 'flappyDev';
+  // Sonya Mode is unpublished while in development: only players with the dev
+  // flag see the Sonya picker/tab. LAUNCH: make this always true (remove gate).
+  let devUnlocked = false;
+  try { devUnlocked = localStorage.getItem(DEV_KEY) === '1'; } catch { /* private mode */ }
+  let mode = 'calvin';
+  try {
+    const saved = localStorage.getItem(MODE_KEY);
+    if (saved === 'sonya' && devUnlocked) mode = 'sonya';
+  } catch { /* ignore */ }
+  let cfg = MODES[mode];
+  let birdPalette = TURKEY_PAL;
+  let walkCycle = 0; // run animation phase while the turkey is on the ground
+
   function toggleMute() {
     muted = !muted;
     localStorage.setItem(MUTE_KEY, muted ? '1' : '0');
@@ -112,14 +186,14 @@
 
   function reset() {
     if (window.FLAPPY) window.FLAPPY.ui.hide();
-    bird = { x: BIRD_X, y: H * 0.42, vy: 0, vx: 0, rot: 0, roasted: false, bounces: 0, resting: false };
+    bird = { x: BIRD_X, y: H * 0.42, vy: 0, vx: 0, rot: 0, roasted: false, bounces: 0, resting: false, onGround: false };
     pipes = [];
     particles = [];
     steam = [];
     score = 0;
     flaps = 0;
     distance = 0;
-    speed = BASE_SPEED;
+    speed = cfg.baseSpeed;
     flapAnim = 0;
     flash = 0;
     deadTimer = 0;
@@ -128,10 +202,13 @@
     elapsed = 0;
     restAt = 0;
     boardOffered = false;
+    walkCycle = 0;
+    birdPalette = cfg.palette === 'crazy' ? crazyPalette() : TURKEY_PAL;
     sceneIndex = 0;
     sceneTransition = null;
     setThemeColor(0);
     state = 'ready';
+    syncPicker();
   }
 
   clouds = [];
@@ -144,7 +221,8 @@
     sfx.ensure();
     if (state === 'ready') {
       state = 'play';
-      if (window.FLAPPY) window.FLAPPY.api.startRun(); // get a signed run token for the leaderboard
+      syncPicker();
+      if (window.FLAPPY) window.FLAPPY.api.startRun(mode); // signed run token, bound to this mode
       flap();
     } else if (state === 'play') {
       flap();
@@ -155,6 +233,7 @@
 
   function flap() {
     bird.vy = FLAP_VY;
+    bird.onGround = false; // flapping lifts the turkey off the ground
     flapAnim = 1;
     flaps++; // counted for the cumulative all-player stats
     sfx.flap();
@@ -198,20 +277,32 @@
   }
 
   function spawnPipe() {
-    const gap = Math.max(MIN_GAP, BASE_GAP - score * GAP_SHRINK);
+    const gap = Math.max(cfg.minGap, cfg.baseGap - score * cfg.gapShrink);
     const margin = 130;
     let gapY = margin + gap / 2 + Math.random() * (H - GROUND_H - 2 * margin - gap);
     // guarantee the next gap is reachable from the previous one
     if (pipes.length) {
       const prev = pipes[pipes.length - 1].gapY;
-      const lo = Math.max(margin + gap / 2, prev - MAX_GAP_JUMP);
-      const hi = Math.min(H - GROUND_H - margin - gap / 2, prev + MAX_GAP_JUMP);
+      const lo = Math.max(margin + gap / 2, prev - cfg.maxGapJump);
+      const hi = Math.min(H - GROUND_H - margin - gap / 2, prev + cfg.maxGapJump);
       gapY = Math.max(lo, Math.min(hi, gapY));
     }
-    const types = Object.keys(OBSTACLES);
+    const types = Object.keys(cfg.obstacles);
     const type = types[(Math.random() * types.length) | 0];
-    const x = pipes.length ? pipes[pipes.length - 1].x + PIPE_SPACING : W + 80;
-    pipes.push({ x, gapY, gap, type, w: OBSTACLES[type].w, hitW: OBSTACLES[type].hitW, scored: false });
+    let x;
+    if (pipes.length) {
+      // Sonya Mode: uneven spacing — sometimes a series of 1-3 obstacle slots
+      // are skipped, leaving open ground the turkey can land on
+      let slots = 1;
+      if (cfg.unevenSpacing) {
+        const r = Math.random();
+        slots = r < 0.62 ? 1 : r < 0.84 ? 2 : r < 0.95 ? 3 : 4; // 0..3 missing obstacles
+      }
+      x = pipes[pipes.length - 1].x + cfg.pipeSpacing * slots;
+    } else {
+      x = W + 80;
+    }
+    pipes.push({ x, gapY, gap, type, w: cfg.obstacles[type].w, hitW: cfg.obstacles[type].hitW, scored: false });
   }
 
   function circleRect(cx, cy, r, rx, ry, rw, rh) {
@@ -256,6 +347,17 @@
       // the oil vat and basket handle are DRAWN bulging into the gap — hitbox includes them
       push(p.x + 8, top, p.w - 16, 18);
       push(p.x + 8, bot - 18, p.w - 16, 18);
+    } else if (p.type === 'bush' || p.type === 'flowers') {
+      const hx = p.x + (p.w - p.hitW) / 2;
+      push(hx, -20, p.hitW, top + 20);
+      push(hx, bot, p.hitW, H - bot + 20);
+      // the scalloped leafy face bulges BUSH_LIP into the gap — hitbox includes it
+      push(p.x, top, p.w, BUSH_LIP);
+      push(p.x, bot - BUSH_LIP, p.w, BUSH_LIP);
+    } else if (p.type === 'chocolate') {
+      // only the floating block flush with the gap edge is solid; the rest of the column is sky
+      push(p.x, Math.max(-20, top - CHOC_D), p.w, Math.min(CHOC_D, top + 20));
+      push(p.x, bot, p.w, Math.min(CHOC_D, H - bot + 20));
     } else {
       const hx = p.x + (p.w - p.hitW) / 2;
       push(hx, -20, p.hitW, top + 20);
@@ -399,13 +501,13 @@
     }
 
     if (state === 'play') {
-      speed = BASE_SPEED + Math.min(MAX_SPEED_BONUS, score * SPEED_RAMP);
+      speed = cfg.baseSpeed + Math.min(cfg.maxSpeedBonus, score * cfg.speedRamp);
       distance += speed * dt;
 
       bird.vy = Math.min(bird.vy + GRAVITY * dt, MAX_FALL);
       bird.y += bird.vy * dt;
 
-      if (!pipes.length || pipes[pipes.length - 1].x < W - PIPE_SPACING) spawnPipe();
+      if (!pipes.length || pipes[pipes.length - 1].x < W - cfg.pipeSpacing) spawnPipe();
       const ext = birdExtents();
       for (const p of pipes) {
         p.x -= speed * dt;
@@ -433,9 +535,16 @@
       const ext2 = birdExtents();
       if (ext2.maxY >= H - GROUND_H) {
         bird.y -= (ext2.maxY - (H - GROUND_H));
-        die(false);
+        if (cfg.groundKills) {
+          die(false);
+        } else {
+          // Sonya Mode: landing on the ground is safe — the turkey just runs along it
+          bird.vy = 0;
+          bird.onGround = true;
+        }
       }
       if (ext2.minY < 0) { bird.y -= ext2.minY; bird.vy = Math.max(bird.vy, 0); }
+      if (bird.onGround && state === 'play') walkCycle += speed * dt; // run animation phase
     }
 
     if (state === 'dead') {
@@ -492,7 +601,8 @@
         bird.rot += (bird.vx >= 0 ? 1 : -1) * (3 + Math.abs(bird.vy) * 0.008) * dt;
       }
     } else {
-      const target = bird.vy < 0 ? -0.42 : Math.min(1.45, (bird.vy / MAX_FALL) * 1.5);
+      // upright while running on the ground; nose up on flap, nose-dive when falling
+      const target = bird.onGround ? 0 : (bird.vy < 0 ? -0.42 : Math.min(1.45, (bird.vy / MAX_FALL) * 1.5));
       bird.rot += (target - bird.rot) * Math.min(1, dt * (bird.vy < 0 ? 14 : 5));
     }
   }
@@ -1398,11 +1508,100 @@
     drawWireEnd(bot + 6, -1);  // bottom cable sparks point up into the gap
   }
 
+  // ---------- Sonya Mode: friendly obstacles (bushes, fence posts, flower bushes, chocolates) ----------
+  function drawFriendly(p, edgeY, isTop) {
+    const x = p.x, w = p.w;
+    const y0 = isTop ? -20 : edgeY;
+    const y1 = isTop ? edgeY : H - GROUND_H + 20;
+    if (p.type === 'bush' || p.type === 'flowers') {
+      // leafy column filling the whole side of the gap
+      const g = ctx.createLinearGradient(x, 0, x + w, 0);
+      g.addColorStop(0, '#2e7d32'); g.addColorStop(0.5, '#43a047'); g.addColorStop(1, '#1b5e20');
+      ctx.fillStyle = g;
+      ctx.strokeStyle = '#0d3311'; ctx.lineWidth = 3;
+      roundRect(x, y0, w, y1 - y0, 8); ctx.fill(); ctx.stroke();
+      // leaf texture flecks
+      ctx.fillStyle = 'rgba(255,255,255,0.10)';
+      const hh = Math.max(60, y1 - y0 - 40);
+      for (let i = 0; i < 5; i++) {
+        const lx = x + 12 + ((i * 37 + (isTop ? 0 : 13)) % Math.max(1, w - 24));
+        const ly = y0 + 20 + ((i * 53) % hh);
+        ctx.beginPath(); ctx.ellipse(lx, ly, 9, 5, i * 0.7, 0, Math.PI * 2); ctx.fill();
+      }
+      // scalloped leafy face right at the gap edge (bulges BUSH_LIP into the gap)
+      ctx.fillStyle = '#388e3c';
+      ctx.strokeStyle = '#0d3311'; ctx.lineWidth = 2.5;
+      for (let i = 0; i < 4; i++) {
+        ctx.beginPath(); ctx.arc(x + (w / 4) * (i + 0.5), edgeY, BUSH_LIP, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
+      if (p.type === 'flowers') {
+        // happy flowers sitting on the leafy face
+        const petals = ['#ff6fa5', '#ffd93d', '#c56cf0'];
+        for (let i = 0; i < 3; i++) {
+          const fx = x + w * (0.22 + i * 0.28);
+          const fy = edgeY + (isTop ? 2 : -2);
+          ctx.fillStyle = petals[i];
+          for (let k = 0; k < 5; k++) {
+            const a = (k / 5) * Math.PI * 2;
+            ctx.beginPath(); ctx.arc(fx + Math.cos(a) * 6, fy + Math.sin(a) * 6, 4.5, 0, Math.PI * 2); ctx.fill();
+          }
+          ctx.fillStyle = '#fff59d';
+          ctx.beginPath(); ctx.arc(fx, fy, 4, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+    } else if (p.type === 'fence') {
+      // a single wooden fence post; pointed tip aims into the gap
+      const wood = ctx.createLinearGradient(x, 0, x + w, 0);
+      wood.addColorStop(0, '#8d5a2b'); wood.addColorStop(0.5, '#c98d4f'); wood.addColorStop(1, '#6d4423');
+      ctx.fillStyle = wood;
+      ctx.strokeStyle = '#4a2c12'; ctx.lineWidth = 3;
+      roundRect(x, y0, w, y1 - y0, 5); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = 'rgba(74,44,18,0.5)'; ctx.lineWidth = 2;
+      for (let i = 1; i < 3; i++) {
+        ctx.beginPath(); ctx.moveTo(x + (w / 3) * i, y0 + 8); ctx.lineTo(x + (w / 3) * i, y1 - 8); ctx.stroke();
+      }
+      ctx.fillStyle = wood;
+      ctx.strokeStyle = '#4a2c12'; ctx.lineWidth = 3;
+      ctx.beginPath();
+      if (isTop) {
+        ctx.moveTo(x + 3, edgeY - 26); ctx.lineTo(x + w - 3, edgeY - 26); ctx.lineTo(x + w / 2, edgeY);
+      } else {
+        ctx.moveTo(x + 3, edgeY + 26); ctx.lineTo(x + w - 3, edgeY + 26); ctx.lineTo(x + w / 2, edgeY);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    } else if (p.type === 'chocolate') {
+      // floating chocolate block flush with the gap edge — nothing behind it but sky
+      const by = isTop ? edgeY - CHOC_D : edgeY;
+      const g = ctx.createLinearGradient(x, 0, x + w, 0);
+      g.addColorStop(0, '#5d3a1a'); g.addColorStop(0.5, '#8a5a2b'); g.addColorStop(1, '#4a2a10');
+      ctx.fillStyle = g;
+      ctx.strokeStyle = '#2e1808'; ctx.lineWidth = 3;
+      roundRect(x, by, w, CHOC_D, 7); ctx.fill(); ctx.stroke();
+      // segment grooves
+      ctx.strokeStyle = 'rgba(46,24,8,0.6)'; ctx.lineWidth = 2;
+      for (let i = 1; i < 3; i++) {
+        ctx.beginPath(); ctx.moveTo(x + (w / 3) * i, by + 3); ctx.lineTo(x + (w / 3) * i, by + CHOC_D - 3); ctx.stroke();
+      }
+      ctx.beginPath(); ctx.moveTo(x + 3, by + CHOC_D / 2); ctx.lineTo(x + w - 3, by + CHOC_D / 2); ctx.stroke();
+      // happy face
+      const fy = by + CHOC_D / 2;
+      ctx.fillStyle = '#fff8ec';
+      ctx.beginPath(); ctx.arc(x + w * 0.32, fy - 4, 3.4, 0, Math.PI * 2); ctx.arc(x + w * 0.68, fy - 4, 3.4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#2e1808';
+      ctx.beginPath(); ctx.arc(x + w * 0.32, fy - 4, 1.6, 0, Math.PI * 2); ctx.arc(x + w * 0.68, fy - 4, 1.6, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#fff8ec'; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(x + w / 2, fy + 1, 8, 0.25, Math.PI - 0.25); ctx.stroke();
+    }
+  }
+
   function drawPipe(p) {
     // visual gap edges (collision uses effGap, which only shrinks for live wires)
     const vTop = p.gapY - p.gap / 2;
     const vBot = p.gapY + p.gap / 2;
-    if (p.type === 'pitchfork') {
+    if (SONYA_OBSTACLES[p.type]) {
+      drawFriendly(p, vTop, true);
+      drawFriendly(p, vBot, false);
+    } else if (p.type === 'pitchfork') {
       drawPitchfork(p, vTop, true);
       drawPitchfork(p, vBot, false);
     } else if (p.type === 'oven') {
@@ -1471,12 +1670,27 @@
 
   function drawTurkey() {
     if (bird.roasted) { drawRoastedTurkey(); return; }
+    const pal = birdPalette;
     ctx.save();
     ctx.translate(bird.x, bird.y);
+    if (bird.onGround) ctx.translate(0, -Math.abs(Math.sin(walkCycle * 0.05)) * 2.5); // run bob
     ctx.rotate(bird.rot);
 
+    // little legs while running along the ground (Sonya Mode)
+    if (bird.onGround) {
+      const sw = Math.sin(walkCycle * 0.05);
+      ctx.strokeStyle = pal.beak; ctx.lineWidth = 4; ctx.lineCap = 'round';
+      for (const s of [-1, 1]) {
+        const lx = s * 7;
+        const footX = lx + s * 3 * sw;
+        const footY = 19 - Math.max(0, s * sw) * 5;
+        ctx.beginPath(); ctx.moveTo(lx, 10); ctx.lineTo(footX, footY); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(footX - 3, footY); ctx.lineTo(footX + 4, footY); ctx.stroke();
+      }
+    }
+
     // tail fan (behind body)
-    const featherColors = ['#b03a2e', '#d35400', '#f39c12', '#ca6f1e', '#a04000', '#e59866', '#922b21'];
+    const featherColors = pal.tail;
     for (let i = -3; i <= 3; i++) {
       ctx.save();
       ctx.translate(-15, 2);
@@ -1489,11 +1703,11 @@
     }
 
     // body + belly
-    ctx.fillStyle = '#8f4f1d';
-    ctx.strokeStyle = '#5d3313';
+    ctx.fillStyle = pal.body;
+    ctx.strokeStyle = pal.stroke;
     ctx.lineWidth = 3;
     ctx.beginPath(); ctx.ellipse(0, 0, 23, 17, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#d99a55';
+    ctx.fillStyle = pal.belly;
     ctx.beginPath(); ctx.ellipse(5, 6, 13, 9, 0, 0, Math.PI * 2); ctx.fill();
 
     // wing — flaps continuously, with a bigger, faster sweep right after a tap
@@ -1501,12 +1715,12 @@
     ctx.save();
     ctx.translate(-4, 0);
     ctx.rotate(wingAngle);
-    ctx.fillStyle = '#6e3a12';
-    ctx.strokeStyle = '#4a2408';
+    ctx.fillStyle = pal.wing;
+    ctx.strokeStyle = pal.wingStroke;
     ctx.lineWidth = 2.5;
     ctx.beginPath(); ctx.ellipse(0, 0, 14, 9, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     // feather lines on the wing
-    ctx.strokeStyle = 'rgba(74,36,8,0.7)';
+    ctx.strokeStyle = pal.wingLine;
     ctx.lineWidth = 1.5;
     for (let i = 0; i < 2; i++) {
       ctx.beginPath();
@@ -1517,8 +1731,8 @@
     ctx.restore();
 
     // head — a touch bigger, with a little feather tuft on top
-    ctx.fillStyle = '#8f4f1d';
-    ctx.strokeStyle = '#5d3313';
+    ctx.fillStyle = pal.body;
+    ctx.strokeStyle = pal.stroke;
     ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(15, -13, 11.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.lineWidth = 2;
@@ -1529,8 +1743,8 @@
       ctx.stroke();
     }
     // beak
-    ctx.fillStyle = '#f5a623';
-    ctx.strokeStyle = '#c77f0a';
+    ctx.fillStyle = pal.beak;
+    ctx.strokeStyle = pal.beakStroke;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(23, -17);
@@ -1538,11 +1752,11 @@
     ctx.lineTo(23, -7.5);
     ctx.closePath(); ctx.fill(); ctx.stroke();
     // snood + wattle
-    ctx.fillStyle = '#e74c3c';
+    ctx.fillStyle = pal.snood;
     ctx.beginPath(); ctx.ellipse(22.5, -18, 2.6, 4.6, 0.2, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.ellipse(24.5, -5, 3, 5.5, 0, 0, Math.PI * 2); ctx.fill();
     // blush cheek
-    ctx.fillStyle = 'rgba(231,76,60,0.45)';
+    ctx.fillStyle = pal.blush;
     ctx.beginPath(); ctx.ellipse(10.5, -6, 4, 2.6, -0.2, 0, Math.PI * 2); ctx.fill();
     // eye — big and sparkly, blinks every few seconds
     if (elapsed % 3.7 < 0.12) {
@@ -1639,12 +1853,18 @@
     if (state === 'ready') {
       text('FLAPPY', W / 2, H * 0.20, 42, '#ffd66b');
       text('TURKEY', W / 2, H * 0.20 + 52, 58, '#ffffff');
+      text(`${cfg.icon} ${cfg.name}`, W / 2, H * 0.20 + 92, 20, '#ffd66b', 'center', 'rgba(60,20,0,0.7)', 4);
       const blink = 0.65 + 0.35 * Math.sin(elapsed * 5);
       ctx.globalAlpha = blink;
-      text('Tap anywhere to flap', W / 2, H * 0.60, 24);
-      text('Dodge ovens, deep fryers, pitchforks & live wires', W / 2, H * 0.60 + 34, 15, '#ffe9c9', 'center', 'rgba(60,20,0,0.7)', 4);
+      text('Tap anywhere to flap', W / 2, H * 0.72, 24);
+      if (mode === 'sonya') {
+        text('Dodge bushes, fence posts, flowers & chocolates', W / 2, H * 0.72 + 34, 15, '#ffe9c9', 'center', 'rgba(60,20,0,0.7)', 4);
+        text('You can run along the ground! 🏃', W / 2, H * 0.72 + 56, 15, '#ffe9c9', 'center', 'rgba(60,20,0,0.7)', 4);
+      } else {
+        text('Dodge ovens, deep fryers, pitchforks & live wires', W / 2, H * 0.72 + 34, 15, '#ffe9c9', 'center', 'rgba(60,20,0,0.7)', 4);
+      }
       ctx.globalAlpha = 1;
-      if (best > 0) text('Best: ' + best, W / 2, H * 0.60 + 66, 18, '#ffd66b', 'center', 'rgba(60,20,0,0.7)', 4);
+      if (best > 0) text('Best: ' + best, W / 2, H * 0.72 + 88, 18, '#ffd66b', 'center', 'rgba(60,20,0,0.7)', 4);
     }
     // game-over panel waits until the roasted turkey has landed and settled
     // (5s fallback so it can never get stuck hidden)
@@ -1715,6 +1935,40 @@
     requestAnimationFrame(frame);
   }
 
+  // ---------- Mode picker (Sonya Mode hidden until the dev gate is opened) ----------
+  const pickerEl = document.getElementById('mode-picker');
+  const pickCalvin = document.getElementById('pick-calvin');
+  const pickSonya = document.getElementById('pick-sonya');
+
+  function pickMode(m, save = true) {
+    if (!MODES[m]) return;
+    if (m === 'sonya' && !devUnlocked) return; // dev gate — LAUNCH: remove
+    mode = m;
+    cfg = MODES[m];
+    try { if (save) localStorage.setItem(MODE_KEY, m); } catch { /* ignore */ }
+    if (pickCalvin && pickSonya) {
+      pickCalvin.classList.toggle('active', m === 'calvin');
+      pickSonya.classList.toggle('active', m === 'sonya');
+    }
+    if (window.FLAPPY && window.FLAPPY.ui.setMode) window.FLAPPY.ui.setMode(m);
+  }
+
+  function syncPicker() {
+    if (!pickerEl) return;
+    pickerEl.classList.toggle('hidden', !(devUnlocked && state === 'ready'));
+    if (pickSonya) pickSonya.classList.toggle('hidden', !devUnlocked);
+  }
+
+  if (pickerEl) {
+    // taps on the picker must never flap the turkey — the game listens on window
+    for (const ev of ['pointerdown', 'mousedown', 'touchstart']) {
+      pickerEl.addEventListener(ev, (e) => e.stopPropagation());
+    }
+    if (pickCalvin) pickCalvin.addEventListener('click', () => pickMode('calvin'));
+    if (pickSonya) pickSonya.addEventListener('click', () => pickMode('sonya'));
+    pickMode(mode, false); // apply the remembered mode + highlight
+  }
+
   reset();
   requestAnimationFrame(frame);
 
@@ -1742,9 +1996,17 @@
     },
     get difficulty() { return Math.round(difficultyProgress(score) * 1000) / 1000; },
     sceneForScore(s) { return sceneFor(s); }, // pure mapping: score -> scene index
-    get obstacles() { return JSON.parse(JSON.stringify(OBSTACLES)); },
+    get mode() { return mode; },
+    get devUnlocked() { return devUnlocked; },
+    get onGround() { return bird ? !!bird.onGround : false; },
+    get walkCycle() { return Math.round(walkCycle * 100) / 100; },
+    get speed() { return speed; },
+    get palette() { return { ...birdPalette }; },
+    get obstacles() { return JSON.parse(JSON.stringify(cfg.obstacles)); },
     get hitShape() { return BIRD_HIT.map((c) => ({ ...c })); },
+    hitRectsFor(p, top, bot) { return pipeHitRects(p, top, bot); },
     get pipes() { return pipes.map((p) => ({ x: Math.round(p.x), type: p.type, w: p.w, hitW: p.hitW, gap: Math.round(p.gap), gapY: Math.round(p.gapY) })); },
+    pickMode(m) { pickMode(m); reset(); }, // test hook: switch mode and restart
     restart() { if (state === 'dead') reset(); }, // used by the leaderboard overlay's "Play again"
   };
 })();

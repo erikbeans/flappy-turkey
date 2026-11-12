@@ -5,8 +5,9 @@
  *   GET  /api/health              -> { ok: true }
  *   POST /api/run/start           -> { ok, runId, startedAt, token }  token = HMAC-SHA256(runId|startedAt)
  *   POST /api/score               -> { ok, rank, entry }              validated score submission
- *   GET  /api/leaderboard?limit=N -> { ok, scores: [...], players1h }  (N up to 100 — top 100;
- *                                    players1h = unique player IPs active in the last hour)
+ *   GET  /api/leaderboard?limit=N&mode=M -> { ok, scores: [...], players1h }  (N up to 100 — top 100;
+ *                                    M = calvin|sonya, separate board per mode, default calvin;
+ *                                    players1h = unique player IPs active in the last hour, all modes)
  *   POST /api/stats               -> { ok }                                   game reports flaps+gates after each run
  *   GET  /api/stats               -> { ok, total: {flaps, gates}, today: {date, flaps, gates} }  (today = Pacific day)
  *
@@ -38,6 +39,8 @@ const RATE_LIMITS = {
   'stats': 20,     // once per finished run
 };
 const RATE_LIMIT = 6; // fallback for any other write scope
+const MODES = ['calvin', 'sonya']; // separate leaderboard per game mode
+function normMode(m) { return MODES.includes(m) ? m : 'calvin'; } // unknown/missing -> calvin (old clients)
 const FLAPS_PER_SEC_ALLOWANCE = 15; // humans tap far below this; generous anti-bot margin
 const FLAPS_SLACK = 20;
 const MAX_FLAPS = 1_000_000;
@@ -93,11 +96,13 @@ async function startRun(env, request) {
   const ip = clientIp(request);
   if (await rateLimited(env, ip, 'run/start')) throw httpError(429, 'rate limited — slow down');
   await logActivity(env, ip);
+  const body = await readJson(request);
+  const mode = normMode(body.mode); // bound to the run; the score submission must match it
   const runId = crypto.randomUUID();
   const startedAt = Date.now();
-  await env.DB.prepare('INSERT INTO runs (run_id, started_at) VALUES (?, ?)').bind(runId, startedAt).run();
+  await env.DB.prepare('INSERT INTO runs (run_id, started_at, mode) VALUES (?, ?, ?)').bind(runId, startedAt, mode).run();
   const token = await hmacHex(env.SCORE_SECRET, `${runId}|${startedAt}`);
-  return { ok: true, runId, startedAt, token };
+  return { ok: true, runId, startedAt, token, mode };
 }
 
 function sanitizeName(name) {
@@ -111,6 +116,7 @@ async function submitScore(env, request) {
   if (await rateLimited(env, ip, 'score')) throw httpError(429, 'rate limited — slow down');
   const body = await readJson(request);
   const { runId, startedAt, token, name, score, durationMs } = body;
+  const mode = normMode(body.mode);
 
   if (typeof runId !== 'string' || typeof startedAt !== 'number' || typeof token !== 'string') {
     throw httpError(400, 'missing run credentials');
@@ -125,10 +131,11 @@ async function submitScore(env, request) {
   const cleanName = sanitizeName(name);
   if (!cleanName) throw httpError(400, `name must be 1-${MAX_NAME_LEN} characters`);
 
-  const run = await env.DB.prepare('SELECT started_at, used FROM runs WHERE run_id = ?').bind(runId).first();
+  const run = await env.DB.prepare('SELECT started_at, used, mode FROM runs WHERE run_id = ?').bind(runId).first();
   if (!run) throw httpError(400, 'unknown run');
   if (run.used) throw httpError(409, 'this run was already submitted');
   if (run.started_at !== startedAt) throw httpError(400, 'run start mismatch');
+  if (run.mode !== mode) throw httpError(400, 'mode does not match this run');
   const expected = await hmacHex(env.SCORE_SECRET, `${runId}|${startedAt}`);
   if (token !== expected) throw httpError(403, 'bad run token');
 
@@ -143,14 +150,14 @@ async function submitScore(env, request) {
 
   await env.DB.prepare('UPDATE runs SET used = 1 WHERE run_id = ?').bind(runId).run();
   const ins = await env.DB.prepare(
-    'INSERT INTO scores (run_id, name, score, duration_ms) VALUES (?, ?, ?, ?) RETURNING id, created_at'
-  ).bind(runId, cleanName, score, Math.round(durationMs)).run();
+    'INSERT INTO scores (run_id, name, score, duration_ms, mode) VALUES (?, ?, ?, ?, ?) RETURNING id, created_at'
+  ).bind(runId, cleanName, score, Math.round(durationMs), mode).run();
   const entry = ins.results[0];
-  const rankRow = await env.DB.prepare('SELECT COUNT(*) AS c FROM scores WHERE score > ?').bind(score).first();
+  const rankRow = await env.DB.prepare('SELECT COUNT(*) AS c FROM scores WHERE mode = ? AND score > ?').bind(mode, score).first();
   return {
     ok: true,
     rank: (rankRow ? rankRow.c : 0) + 1,
-    entry: { id: entry.id, name: cleanName, score, createdAt: entry.created_at },
+    entry: { id: entry.id, name: cleanName, score, mode, createdAt: entry.created_at },
   };
 }
 
@@ -161,9 +168,10 @@ async function leaderboard(url, env) {
   let limit = parseInt(url.searchParams.get('limit') || '10', 10);
   if (!Number.isInteger(limit) || limit < 1) limit = 10;
   limit = Math.min(limit, MAX_LEADERBOARD_LIMIT);
+  const mode = normMode(url.searchParams.get('mode'));
   const { results } = await env.DB.prepare(
-    'SELECT id, name, score, created_at AS createdAt FROM scores ORDER BY score DESC, created_at ASC, id ASC LIMIT ?'
-  ).bind(limit).all();
+    'SELECT id, name, score, mode, created_at AS createdAt FROM scores WHERE mode = ? ORDER BY score DESC, created_at ASC, id ASC LIMIT ?'
+  ).bind(mode, limit).all();
   const playersRow = await env.DB.prepare(
     'SELECT COUNT(DISTINCT ip) AS c FROM activity WHERE ts >= ?'
   ).bind(Date.now() - ACTIVITY_WINDOW_MS).first();

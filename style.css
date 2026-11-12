@@ -39,6 +39,44 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* ---------- Mode picker (shown on the ready screen) ---------- */
+#mode-picker {
+  position: absolute;
+  top: 42%;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  touch-action: none;
+}
+#mode-picker.hidden { display: none; }
+#mode-picker button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 128px;
+  padding: 12px 8px;
+  border-radius: 14px;
+  border: 3px solid rgba(247, 178, 103, 0.55);
+  background: rgba(30, 12, 8, 0.72);
+  color: #ffe9c9;
+  font: inherit;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+}
+#mode-picker button:first-child { font-size: 26px; }
+#mode-picker button span { font-size: 13px; }
+#mode-picker button.active {
+  border-color: #ffd66b;
+  background: rgba(90, 45, 15, 0.85);
+  box-shadow: 0 0 18px rgba(255, 214, 107, 0.45);
+}
+#mode-picker button.hidden { display: none; }
+
 /* ---------- Leaderboard overlay ---------- */
 #board-btn {
   position: absolute;
@@ -89,6 +127,30 @@ body {
   justify-content: space-between;
 }
 .board-head h2 { font-size: 22px; color: #ffd66b; }
+
+#board-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 6px 0 2px;
+}
+#board-tabs button {
+  flex: 1;
+  padding: 6px 4px;
+  border-radius: 8px;
+  border: 2px solid rgba(247, 178, 103, 0.4);
+  background: rgba(0, 0, 0, 0.3);
+  color: #ffe9c9;
+  font: inherit;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+}
+#board-tabs button.active {
+  border-color: #ffd66b;
+  background: rgba(90, 45, 15, 0.8);
+  color: #ffd66b;
+}
+#board-tabs button.hidden { display: none; }
 #board-close {
   background: none;
   border: none;

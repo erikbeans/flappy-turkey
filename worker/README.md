@@ -8,9 +8,9 @@ The static game is hosted on GitHub Pages and calls this API from the browser.
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/api/health` | Liveness check → `{ ok: true }` |
-| POST | `/api/run/start` | Start a run → `{ ok, runId, startedAt, token }` |
-| POST | `/api/score` | Submit a score → `{ ok, rank, entry }` (validated) |
-| GET | `/api/leaderboard?limit=N` | Top scores (N ≤ 100, default 10) → `{ ok, scores: [...], players1h }` — `players1h` = unique player IPs that started or finished a run in the last hour (from the `activity` table) |
+| POST | `/api/run/start` | Start a run → `{ ok, runId, startedAt, token, mode }`. Body may carry `mode: "calvin"|"sonya"` (default `calvin`); the mode is bound to the run and the score submission must match |
+| POST | `/api/score` | Submit a score → `{ ok, rank, entry }` (validated). Body carries the same `mode` as the run; rank is per-mode |
+| GET | `/api/leaderboard?limit=N&mode=M` | Top scores (N ≤ 100, default 10; M = `calvin`|`sonya`, default `calvin` — separate board per game mode) → `{ ok, scores: [...], players1h }` — `players1h` = unique player IPs that started or finished a run in the last hour, across all modes (from the `activity` table) |
 | POST | `/api/stats` | Report a finished game's flaps + gates → `{ ok: true }` (validated like `/api/score`, single-use per run, separate from score submission) |
 | GET | `/api/stats` | Cumulative all-player stats → `{ ok, total: {flaps, gates}, today: {date, flaps, gates} }` — "today" is the current Pacific (America/Los_Angeles) calendar day |
 
@@ -19,7 +19,7 @@ The static game is hosted on GitHub Pages and calls this API from the browser.
 A plain client-side game can't prove a score, but we make casual forgery hard:
 
 - `POST /api/run/start` issues a `runId` and an HMAC-SHA256 `token` over `runId|startedAt`,
-  and records the start time server-side in D1.
+  and records the start time and game mode server-side in D1.
 - `POST /api/score` requires that token; runs are **single-use** and the `startedAt`
   must match the server record.
 - The score is capped by **elapsed time**: the game can score at most ~0.91 pts/s

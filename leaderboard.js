@@ -13,10 +13,24 @@
   const NAME_KEY = 'flappyTurkeyName';
   const LOCAL_KEY = 'flappyTurkeyLocalBoard';
   const STATS_KEY = 'flappyTurkeyStats';
+  const MODE_KEY = 'flappyTurkeyMode'; // last picked mode (shared with game.js's picker)
   const TOP_N = 100; // the board keeps the top 100
 
+  // Game modes. Sonya Mode is UNPUBLISHED while we develop it: the Sonya picker
+  // button and leaderboard tab only appear when localStorage.flappyDev === '1'.
+  // LAUNCH: remove the devUnlocked gate (treat it as always true).
+  const MODES = ['calvin', 'sonya'];
+  const devUnlocked = (() => { try { return localStorage.getItem('flappyDev') === '1'; } catch { return false; } })();
+  function normMode(m) {
+    m = MODES.includes(m) ? m : 'calvin';
+    return m === 'sonya' && !devUnlocked ? 'calvin' : m;
+  }
+  const MODE_LABEL = { calvin: 'Calvin 🦃', sonya: 'Sonya 🌈' };
+  let boardMode = normMode(safeGet(MODE_KEY));
+  function safeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+
   // ---------- API ----------
-  let run = null; // { runId, startedAt, token, t0 }
+  let run = null; // { runId, startedAt, token, t0, mode }
 
   async function api(path, opts = {}) {
     const res = await fetch(apiBase + path, {
@@ -29,11 +43,13 @@
     return body;
   }
 
-  async function startRun() {
+  async function startRun(mode) {
+    const m = normMode(mode);
+    setBoardMode(m, false); // the board follows the mode being played
     if (!online) { run = null; return null; }
     try {
-      const j = await api('/api/run/start', { method: 'POST', body: '{}' });
-      run = { runId: j.runId, startedAt: j.startedAt, token: j.token, t0: performance.now() };
+      const j = await api('/api/run/start', { method: 'POST', body: JSON.stringify({ mode: m }) });
+      run = { runId: j.runId, startedAt: j.startedAt, token: j.token, t0: performance.now(), mode: m };
       return run;
     } catch (e) {
       run = null;
@@ -42,25 +58,26 @@
   }
 
   async function submitScore(name, score) {
-    if (!online) return { online: false, ...localSubmit(name, score) };
+    if (!online) return { online: false, ...localSubmit(name, score, boardMode) };
     if (!run) throw new Error('no active run — start playing first');
     const durationMs = Math.max(0, Math.round(performance.now() - run.t0));
     const payload = {
       runId: run.runId, startedAt: run.startedAt, token: run.token,
-      name, score, durationMs,
+      name, score, durationMs, mode: run.mode,
     };
     run = null; // run tokens are single-use
     const j = await api('/api/score', { method: 'POST', body: JSON.stringify(payload) });
     return { online: true, ...j };
   }
 
-  async function top(limit = TOP_N) {
-    if (!online) return { online: false, scores: localTop(limit) };
+  async function top(limit = TOP_N, mode = boardMode) {
+    const m = normMode(mode);
+    if (!online) return { online: false, scores: localTop(limit, m) };
     try {
-      const j = await api('/api/leaderboard?limit=' + Math.min(limit, TOP_N));
-      return { online: true, scores: j.scores, players1h: j.players1h };
+      const j = await api('/api/leaderboard?limit=' + Math.min(limit, TOP_N) + '&mode=' + m);
+      return { online: true, scores: j.scores, players1h: j.players1h, mode: m };
     } catch (e) {
-      return { online: false, scores: localTop(limit), error: e.message };
+      return { online: false, scores: localTop(limit, m), error: e.message };
     }
   }
 
@@ -95,24 +112,26 @@
     }
   }
 
-  // ---------- local fallback (per-device board) ----------
-  function localLoad() {
-    try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || '[]'); } catch { return []; }
+  // ---------- local fallback (per-device board, separate per mode) ----------
+  function localKey(mode) { return LOCAL_KEY + '.' + normMode(mode); }
+
+  function localLoad(mode) {
+    try { return JSON.parse(localStorage.getItem(localKey(mode)) || '[]'); } catch { return []; }
   }
 
-  function localTop(limit) {
-    return localLoad()
+  function localTop(limit, mode) {
+    return localLoad(mode)
       .sort((a, b) => b.score - a.score || a.at - b.at)
       .slice(0, limit)
       .map((e) => ({ id: e.at, name: e.name, score: e.score, createdAt: new Date(e.at).toISOString() }));
   }
 
-  function localSubmit(name, score) {
+  function localSubmit(name, score, mode) {
     const at = Date.now();
-    const arr = localLoad();
+    const arr = localLoad(mode);
     arr.push({ name, score, at });
     arr.sort((a, b) => b.score - a.score || a.at - b.at);
-    localStorage.setItem(LOCAL_KEY, JSON.stringify(arr.slice(0, TOP_N)));
+    localStorage.setItem(localKey(mode), JSON.stringify(arr.slice(0, TOP_N)));
     return {
       rank: arr.findIndex((e) => e.at === at) + 1,
       entry: { id: at, name, score, createdAt: new Date(at).toISOString() },
@@ -160,6 +179,8 @@
     els = {
       btn: $('board-btn'),
       board: $('board'),
+      tabs: Array.from(document.querySelectorAll('#board-tabs button')),
+      tabSonya: $('tab-sonya'),
       list: $('board-list'),
       status: $('board-status'),
       form: $('board-form'),
@@ -177,6 +198,12 @@
         el.addEventListener(ev, (e) => e.stopPropagation());
       }
     }
+    // Sonya tab stays hidden until the dev gate is opened (LAUNCH: remove this)
+    if (els.tabSonya && !devUnlocked) els.tabSonya.classList.add('hidden');
+    for (const b of els.tabs) {
+      b.addEventListener('click', () => setBoardMode(b.dataset.mode));
+    }
+    syncTabs();
     els.name.value = localStorage.getItem(NAME_KEY) || '';
     els.btn.addEventListener('click', () => (els.board.classList.contains('hidden') ? show(0) : hide()));
     els.close.addEventListener('click', hide);
@@ -207,13 +234,25 @@
     els.msg.classList.toggle('err', !!isErr);
   }
 
+  function syncTabs() {
+    if (!els) return;
+    for (const b of els.tabs) b.classList.toggle('active', b.dataset.mode === boardMode);
+  }
+
+  // Switch which mode's board the panel shows (called by the mode picker too).
+  function setBoardMode(m, refreshBoard = true) {
+    boardMode = normMode(m);
+    syncTabs();
+    if (refreshBoard) refresh();
+  }
+
   async function refresh() {
     if (!els) return;
     els.status.textContent = 'Loading leaderboard…';
-    const res = await top(TOP_N);
+    const res = await top(TOP_N, boardMode);
     renderList(res.scores);
     els.status.textContent = res.online
-      ? `Top ${Math.min(res.scores.length, TOP_N)} of the global board · ` +
+      ? `Top ${Math.min(res.scores.length, TOP_N)} of the ${MODE_LABEL[boardMode] || 'global'} board · ` +
         `${fmt(res.players1h)} player${res.players1h === 1 ? '' : 's'} in the last hour`
       : (res.error
           ? `Online board unavailable (${res.error}) — showing local scores`
@@ -292,7 +331,9 @@
 
   window.FLAPPY = {
     api: { startRun, submitScore, top, reportStats, fetchStats },
-    ui: { show, hide, refresh },
+    ui: { show, hide, refresh, setMode: setBoardMode },
     get online() { return online; },
+    get devMode() { return devUnlocked; }, // Sonya Mode visible only when true (until launch)
+    get mode() { return boardMode; },
   };
 })();

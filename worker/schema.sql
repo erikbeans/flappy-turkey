@@ -3,7 +3,8 @@
 CREATE TABLE IF NOT EXISTS runs (
   run_id     TEXT PRIMARY KEY,          -- random UUID issued at run start
   started_at INTEGER NOT NULL,          -- server time (ms) the run started
-  used       INTEGER NOT NULL DEFAULT 0 -- 1 once the score was submitted (single-use)
+  used       INTEGER NOT NULL DEFAULT 0, -- 1 once the score was submitted (single-use)
+  mode       TEXT NOT NULL DEFAULT 'calvin' -- game mode chosen at run start; score must match
 );
 
 CREATE TABLE IF NOT EXISTS scores (
@@ -12,9 +13,11 @@ CREATE TABLE IF NOT EXISTS scores (
   name        TEXT NOT NULL,            -- sanitized player name (1-16 chars)
   score       INTEGER NOT NULL,         -- validated against run duration server-side
   duration_ms INTEGER NOT NULL,         -- client-reported run duration
+  mode        TEXT NOT NULL DEFAULT 'calvin', -- game mode: separate leaderboard per mode
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_scores_score ON scores(score DESC);
+CREATE INDEX IF NOT EXISTS idx_scores_mode_score ON scores(mode, score DESC);
 
 CREATE TABLE IF NOT EXISTS rate_log (
   ip TEXT NOT NULL,

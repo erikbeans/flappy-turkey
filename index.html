@@ -10,12 +10,20 @@
 <body>
   <div id="wrap">
     <canvas id="game" role="button" tabindex="0" aria-label="Flappy Turkey game area — tap or click anywhere to flap"></canvas>
+    <div id="mode-picker" class="hidden" role="group" aria-label="Choose game mode">
+      <button type="button" id="pick-calvin" class="active">🦃<span>Calvin Mode</span></button>
+      <button type="button" id="pick-sonya" class="hidden">🌈<span>Sonya Mode</span></button>
+    </div>
     <button id="board-btn" aria-label="Open leaderboard" title="Leaderboard">🏆</button>
     <div id="board" class="hidden" role="dialog" aria-label="Leaderboard">
       <div class="board-panel">
         <div class="board-head">
           <h2>🏆 Leaderboard</h2>
           <button id="board-close" aria-label="Close leaderboard">✕</button>
+        </div>
+        <div id="board-tabs" role="tablist" aria-label="Leaderboard by mode">
+          <button type="button" data-mode="calvin" class="active">🦃 Calvin</button>
+          <button type="button" data-mode="sonya" id="tab-sonya" class="hidden">🌈 Sonya</button>
         </div>
         <div id="board-score" class="board-score"></div>
         <div id="board-status" class="board-status"></div>
