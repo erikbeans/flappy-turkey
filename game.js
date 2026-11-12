@@ -461,8 +461,7 @@
             bird.vy = 0;
             bird.resting = true;
             restAt = deadTimer;
-            flash = 1;
-            sfx.hit();
+            flash = 1; // visual landing flash only — no second hit sound
           }
         }
       } else {
@@ -902,8 +901,10 @@
   // ---------- Obstacles ----------
   function drawPitchfork(p, edgeY, isTop) {
     const x = p.x, w = p.w;
-    const y0 = isTop ? -20 : edgeY;
-    const h = isTop ? edgeY + 20 : H - GROUND_H - edgeY + 20;
+    // the wooden handle stops where the steel head begins — no wood in the spike area
+    const headY = isTop ? edgeY - FORK_HEAD_D : edgeY + FORK_HEAD_D;
+    const y0 = isTop ? -20 : headY;
+    const h = isTop ? headY + 20 : H - GROUND_H + 20 - headY;
     const hx = x + (w - FORK_HANDLE_W) / 2;
     // wooden handle
     const wood = ctx.createLinearGradient(hx, 0, hx + FORK_HANDLE_W, 0);
@@ -929,9 +930,9 @@
     const barY = isTop ? edgeY - FORK_HEAD_D : edgeY + FORK_HEAD_D - 12;
     roundRect(x - 4, barY, w + 8, 12, 4); ctx.fill(); ctx.stroke();
     // three long sharp tines; tips land exactly on the gap edge, pointing into the gap
-    // (top fork points down, bottom fork points UP)
+    // (top fork points down, bottom fork points UP); the OUTER tines sit on the edges
     for (let i = 0; i < 3; i++) {
-      const tx = x + 14 + i * ((w - 28) / 2);
+      const tx = x + 5 + i * ((w - 10) / 2); // left tine at x..x+10, right tine at x+w-10..x+w
       const baseY = isTop ? edgeY - FORK_HEAD_D + 12 : edgeY + FORK_HEAD_D - 12;
       ctx.beginPath();
       ctx.moveTo(tx, baseY);
