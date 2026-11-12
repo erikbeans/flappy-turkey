@@ -199,7 +199,7 @@
       }
     }
     // Sonya tab stays hidden until the dev gate is opened (LAUNCH: remove this)
-    if (els.tabSonya && !devUnlocked) els.tabSonya.classList.add('hidden');
+    if (els.tabSonya) els.tabSonya.classList.toggle('hidden', !devUnlocked);
     for (const b of els.tabs) {
       b.addEventListener('click', () => setBoardMode(b.dataset.mode));
     }
@@ -220,6 +220,8 @@
     pendingScore = score;
     els.scoreLine.textContent = score > 0 ? `Your score: ${score}` : '';
     els.form.style.display = score > 0 ? '' : 'none';
+    // the board follows the mode of the run that just ended (if any)
+    if (run && run.mode) setBoardMode(run.mode, false);
     els.board.classList.remove('hidden');
     refresh();
   }
