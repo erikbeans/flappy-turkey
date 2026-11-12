@@ -66,13 +66,12 @@
   // Sonya Mode is UNPUBLISHED during development: the picker is gated behind
   // localStorage.flappyDev === '1' (see devUnlocked). LAUNCH: remove the gate.
   const SONYA_OBSTACLES = {
-    bush:      { w: 100, hitW: 100 }, // leafy bush filling the column — hitbox == sprite (+ leaf lip)
+    bush:      { w: 100, hitW: 100 }, // leafy bush filling the column — hitbox == sprite (+ lip)
     fence:     { w: 44,  hitW: 44  }, // one wooden fence post — only the post is solid
     flowers:   { w: 92,  hitW: 92  }, // bush with flowers on the face — hitbox == sprite (+ lip)
-    chocolate: { w: 84,  hitW: 84  }, // floating chocolate block flush with the gap edge (hitbox = block only)
+    chocolate: { w: 84,  hitW: 84  }, // chocolate-bar wall filling the column — hitbox == sprite (+ lip)
   };
-  const CHOC_D = 34;   // chocolate block depth at the gap edge (must match drawFriendly + pipeHitRects)
-  const BUSH_LIP = 16; // how far the scalloped leafy face bulges into the gap (hitbox includes it)
+  const BUSH_LIP = 16; // how far the scalloped gap-edge face bulges into the gap (hitbox includes it)
   const MODES = {
     calvin: {
       name: 'Calvin Mode', icon: '🦃',
@@ -347,17 +346,13 @@
       // the oil vat and basket handle are DRAWN bulging into the gap — hitbox includes them
       push(p.x + 8, top, p.w - 16, 18);
       push(p.x + 8, bot - 18, p.w - 16, 18);
-    } else if (p.type === 'bush' || p.type === 'flowers') {
+    } else if (p.type === 'bush' || p.type === 'flowers' || p.type === 'chocolate') {
       const hx = p.x + (p.w - p.hitW) / 2;
       push(hx, -20, p.hitW, top + 20);
       push(hx, bot, p.hitW, H - bot + 20);
-      // the scalloped leafy face bulges BUSH_LIP into the gap — hitbox includes it
+      // the scalloped gap-edge face bulges BUSH_LIP into the gap — hitbox includes it
       push(p.x, top, p.w, BUSH_LIP);
       push(p.x, bot - BUSH_LIP, p.w, BUSH_LIP);
-    } else if (p.type === 'chocolate') {
-      // the block bulges CHOC_D into the gap — hitbox == the drawn block, nothing else is solid
-      push(p.x, top, p.w, Math.min(CHOC_D, H - top + 20));
-      push(p.x, Math.max(-20, bot - CHOC_D), p.w, Math.min(CHOC_D, bot + 20));
     } else {
       const hx = p.x + (p.w - p.hitW) / 2;
       push(hx, -20, p.hitW, top + 20);
@@ -1572,28 +1567,40 @@
       }
       ctx.closePath(); ctx.fill(); ctx.stroke();
     } else if (p.type === 'chocolate') {
-      // floating chocolate block that bulges CHOC_D INTO the gap from the edge,
-      // so it costs real clearance (nothing behind it but sky)
-      const by = isTop ? edgeY : edgeY - CHOC_D;
+      // chocolate-bar wall: stacked chocolate squares fill the whole column, so the
+      // only way through is the gap (no flying over/under). The gap-edge face bulges
+      // BUSH_LIP into the gap — just like the bushes — and carries a happy face.
       const g = ctx.createLinearGradient(x, 0, x + w, 0);
       g.addColorStop(0, '#5d3a1a'); g.addColorStop(0.5, '#8a5a2b'); g.addColorStop(1, '#4a2a10');
       ctx.fillStyle = g;
       ctx.strokeStyle = '#2e1808'; ctx.lineWidth = 3;
-      roundRect(x, by, w, CHOC_D, 7); ctx.fill(); ctx.stroke();
-      // segment grooves
-      ctx.strokeStyle = 'rgba(46,24,8,0.6)'; ctx.lineWidth = 2;
+      roundRect(x, y0, w, y1 - y0, 8); ctx.fill(); ctx.stroke();
+      // segment grooves: vertical thirds + horizontal rows (a stack of chocolate squares)
+      ctx.strokeStyle = 'rgba(46,24,8,0.55)'; ctx.lineWidth = 2;
       for (let i = 1; i < 3; i++) {
-        ctx.beginPath(); ctx.moveTo(x + (w / 3) * i, by + 3); ctx.lineTo(x + (w / 3) * i, by + CHOC_D - 3); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x + (w / 3) * i, y0 + 4); ctx.lineTo(x + (w / 3) * i, y1 - 4); ctx.stroke();
       }
-      ctx.beginPath(); ctx.moveTo(x + 3, by + CHOC_D / 2); ctx.lineTo(x + w - 3, by + CHOC_D / 2); ctx.stroke();
-      // happy face
-      const fy = by + CHOC_D / 2;
+      for (let ry = y0 + 28; ry < y1 - 6; ry += 28) {
+        ctx.beginPath(); ctx.moveTo(x + 3, ry); ctx.lineTo(x + w - 3, ry); ctx.stroke();
+      }
+      // glossy highlight near the outer end
+      ctx.fillStyle = 'rgba(255,235,200,0.12)';
+      const hlH = Math.min(40, y1 - y0 - 12);
+      if (hlH > 8) { roundRect(x + 6, isTop ? y0 + 6 : y1 - 6 - hlH, w - 12, hlH, 6); ctx.fill(); }
+      // scalloped gap-edge face, same lip as the bushes
+      ctx.fillStyle = '#6b421f';
+      ctx.strokeStyle = '#2e1808'; ctx.lineWidth = 2.5;
+      for (let i = 0; i < 4; i++) {
+        ctx.beginPath(); ctx.arc(x + (w / 4) * (i + 0.5), edgeY, BUSH_LIP, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
+      // happy face on the center of the edge face
+      const fx = x + w / 2, fy = edgeY;
       ctx.fillStyle = '#fff8ec';
-      ctx.beginPath(); ctx.arc(x + w * 0.32, fy - 4, 3.4, 0, Math.PI * 2); ctx.arc(x + w * 0.68, fy - 4, 3.4, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(fx - 10, fy - 4, 3.4, 0, Math.PI * 2); ctx.arc(fx + 10, fy - 4, 3.4, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#2e1808';
-      ctx.beginPath(); ctx.arc(x + w * 0.32, fy - 4, 1.6, 0, Math.PI * 2); ctx.arc(x + w * 0.68, fy - 4, 1.6, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(fx - 10, fy - 4, 1.6, 0, Math.PI * 2); ctx.arc(fx + 10, fy - 4, 1.6, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = '#fff8ec'; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.arc(x + w / 2, fy + 1, 8, 0.25, Math.PI - 0.25); ctx.stroke();
+      ctx.beginPath(); ctx.arc(fx, fy + 1, 8, 0.25, Math.PI - 0.25); ctx.stroke();
     }
   }
 
