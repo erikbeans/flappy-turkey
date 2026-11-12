@@ -94,18 +94,27 @@ height is **676 px**. The turkey's hitbox (`BIRD_HIT`, 11 circles) is about
 
 | Quantity | Formula | Value at s=0 | Value at max |
 | --- | --- | --- | --- |
-| Scroll speed | `BASE_SPEED + min(MAX_SPEED_BONUS, SPEED_RAMP·s)` | 186 px/s | **286 px/s** (reached at s≈45) |
-| Reaction time between obstacles | `PIPE_SPACING / speed` | **1.51 s** | **0.98 s** (−35%) |
-| Gap size | `max(MIN_GAP, BASE_GAP − GAP_SHRINK·s)` | 168 px | **132 px** (at s≈28) |
-| Clearance per side of turkey | `(gap − 49)/2` | 59.5 px | **41.5 px** |
-| Live-wires effective gap | `max(136, gap − ELEC_SHRINK)` | 144 px | **136 px** (43.5 px/side) |
-| Fryer vat bulge eats | 18 px into the gap, each side | eff. clearance 41.5 px/side | **23.5 px/side** |
+| Scroll speed | `BASE_SPEED + min(MAX_SPEED_BONUS, SPEED_RAMP·s)` | 170 px/s | **270 px/s** (reached at s=60) |
+| Reaction time between obstacles | `PIPE_SPACING / speed` | **1.88 s** | **1.19 s** (−37%) |
+| Gap size | `max(MIN_GAP, BASE_GAP − GAP_SHRINK·s)` | 180 px | **138 px** (at s=60) |
+| Clearance per side of turkey | `(gap − 49)/2` | 65.5 px | **44.5 px** |
+| Live-wires effective gap | `max(136, gap − ELEC_SHRINK)` | 156 px (53.5 px/side) | **136 px** (43.5 px/side) |
+| Fryer vat bulge eats | 18 px into the gap, each side | eff. clearance 47.5 px/side | **26.5 px/side** |
 | Pitchfork trident head | full 80 px wide × 34 px deep at gap edge | — | — |
-| Time spent inside an obstacle | `hitW / speed` | oven 0.58 s · fryer 0.52 s · pitchfork head 0.18 s · wires 0.19 s | oven 0.38 s … |
+| Time spent inside an obstacle | `hitW / speed` | oven 0.64 s · fryer 0.56 s · pitchfork head 0.20 s · wires 0.21 s | oven 0.40 s … |
 | Obstacle mix | uniform over 4 types | **25% each** | — |
-| Gap-center vertical range | margin 130 top/bottom | [214, 462] → **248 px** of room | shrinks with gap |
+| Gap-center vertical range | margin 130 top/bottom | [220, 456] → **236 px** of room | shrinks with gap |
 | Max gap-center jump between obstacles | `MAX_GAP_JUMP` | **200 px** (guaranteed reachable) | — |
-| Max theoretical score rate | `speed / PIPE_SPACING` | 0.66 pts/s | 1.02 pts/s |
+| Max theoretical score rate | `speed / PIPE_SPACING` | 0.53 pts/s | 0.84 pts/s |
+
+**Progression curve (4 stages — the 4th row is maximum hardness):**
+
+| Stage (score) | Speed | Reaction time | Gap | Clearance/side |
+| --- | --- | --- | --- | --- |
+| 1 (s=0) | 170 px/s | 1.88 s | 180 px | 65.5 px |
+| 2 (s=20) | 203 px/s | 1.57 s | 166 px | 58.5 px |
+| 3 (s=40) | 237 px/s | 1.35 s | 152 px | 51.5 px |
+| 4 (s=60) — **max** | 270 px/s | 1.19 s | **138 px** | **44.5 px** |
 
 ### Which knob makes it harder (increase the value)
 
@@ -129,7 +138,7 @@ height is **676 px**. The turkey's hitbox (`BIRD_HIT`, 11 circles) is about
 
 You can ask in terms of the metrics above, e.g.:
 
-- *"Reaction time should never drop below 1.2 s"* → set `PIPE_SPACING ≥ 1.2 × (BASE_SPEED + MAX_SPEED_BONUS)` = 343
+- *"Reaction time should never drop below 1.2 s"* → set `PIPE_SPACING ≥ 1.2 × (BASE_SPEED + MAX_SPEED_BONUS)` = 324
 - *"Gap should never go below 120 px"* → `MIN_GAP = 120` (≈35 px clearance per side)
 - *"Top speed at score 30"* → `SPEED_RAMP = MAX_SPEED_BONUS / 30`
 - *"Flap should reach 100 px high"* → `FLAP_VY = −√(2·GRAVITY·100)` ≈ −616
