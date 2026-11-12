@@ -45,7 +45,7 @@ No build step and no dependencies. Either:
   counted separately from leaderboard submissions, so even unsubmitted games count).
 - Scores are stored in a **Cloudflare Worker + D1** backend (`worker/`) with server-side validation:
   the server signs each run at start (HMAC token), scores are single-use, capped by elapsed time
-  (the game can't score faster than ~0.91 pts/s), rate-limited per IP, and CORS-locked to the Pages origin.
+  (the game can't score faster than ~0.91 pts/s), per-IP per-endpoint rate limited, and CORS-locked to the Pages origin.
 - The API URL lives in `config.js` (`apiBase`). Until it's set (or if the API is unreachable),
   the game falls back to a per-device local leaderboard so it always works.
 

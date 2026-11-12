@@ -26,7 +26,7 @@ A plain client-side game can't prove a score, but we make casual forgery hard:
   (268 px/s max speed ÷ 295 px obstacle spacing), so the server allows at most
   1.5 pts/s + 5 points of slack. A "9999 in 3 seconds" submission is rejected with 422.
 - Absolute score cap (`MAX_SCORE` var), name sanitation (1–16 chars, control chars stripped),
-  body size limit, per-IP rate limiting (6 writes/min), and CORS restricted to
+  body size limit, per-IP, per-endpoint rate limiting (run/start 30/min, score 20/min, stats 20/min — shared-NAT safe), and CORS restricted to
   `ALLOWED_ORIGINS` (the GitHub Pages origin + localhost for dev).
 
 ## Deploy

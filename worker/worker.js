@@ -15,7 +15,7 @@
  *  - score is capped by elapsed time (game physics allow at most ~0.91 pts/s;
  *    we allow 1.5 pts/s + slack to stay well clear of false rejections)
  *  - absolute score cap + name sanitation (1-16 chars, no control characters)
- *  - per-IP rate limiting on the write endpoints
+ *  - per-IP, per-endpoint rate limiting on the write endpoints (shared-NAT safe)
  *  - CORS restricted to the configured origins (the GitHub Pages site + localhost)
  *
  * Honesty note: a client-side game can always be cheated by someone willing to
@@ -27,7 +27,16 @@ const SCORE_SLACK = 5;             // tolerance for timing edge cases
 const MAX_DURATION_MS = 12 * 3600 * 1000;
 const MAX_NAME_LEN = 16;
 const RATE_WINDOW_MS = 60_000;
-const RATE_LIMIT = 6; // write requests per IP per window
+// Per-endpoint write budgets per IP per window. Players behind shared NAT
+// (schools, offices, carrier CGNAT) share one IP, and each game issues a
+// run/start + stats (+ score on submit), so a single global cap was too tight.
+// rate_log rows are keyed "ip|scope", so no schema change is needed.
+const RATE_LIMITS = {
+  'run/start': 30, // issuing a signed token is cheap and happens every game start
+  'score': 20,     // once per submitted run
+  'stats': 20,     // once per finished run
+};
+const RATE_LIMIT = 6; // fallback for any other write scope
 const FLAPS_PER_SEC_ALLOWANCE = 15; // humans tap far below this; generous anti-bot margin
 const FLAPS_SLACK = 20;
 const MAX_FLAPS = 1_000_000;
@@ -46,12 +55,14 @@ function clientIp(request) {
   return request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown';
 }
 
-async function rateLimited(env, ip) {
+async function rateLimited(env, ip, scope) {
   const now = Date.now();
+  const key = ip + '|' + scope; // composite key: one bucket per endpoint per IP
   await env.DB.prepare('DELETE FROM rate_log WHERE ts < ?').bind(now - RATE_WINDOW_MS).run();
-  const row = await env.DB.prepare('SELECT COUNT(*) AS c FROM rate_log WHERE ip = ?').bind(ip).first();
-  if ((row && row.c) >= RATE_LIMIT) return true;
-  await env.DB.prepare('INSERT INTO rate_log (ip, ts) VALUES (?, ?)').bind(ip, now).run();
+  const limit = RATE_LIMITS[scope] || RATE_LIMIT;
+  const row = await env.DB.prepare('SELECT COUNT(*) AS c FROM rate_log WHERE ip = ?').bind(key).first();
+  if ((row && row.c) >= limit) return true;
+  await env.DB.prepare('INSERT INTO rate_log (ip, ts) VALUES (?, ?)').bind(key, now).run();
   return false;
 }
 
@@ -71,7 +82,7 @@ function httpError(status, message) {
 
 async function startRun(env, request) {
   const ip = clientIp(request);
-  if (await rateLimited(env, ip)) throw httpError(429, 'rate limited — slow down');
+  if (await rateLimited(env, ip, 'run/start')) throw httpError(429, 'rate limited — slow down');
   const runId = crypto.randomUUID();
   const startedAt = Date.now();
   await env.DB.prepare('INSERT INTO runs (run_id, started_at) VALUES (?, ?)').bind(runId, startedAt).run();
@@ -87,7 +98,7 @@ function sanitizeName(name) {
 
 async function submitScore(env, request) {
   const ip = clientIp(request);
-  if (await rateLimited(env, ip)) throw httpError(429, 'rate limited — slow down');
+  if (await rateLimited(env, ip, 'score')) throw httpError(429, 'rate limited — slow down');
   const body = await readJson(request);
   const { runId, startedAt, token, name, score, durationMs } = body;
 
@@ -158,7 +169,7 @@ function pacificDateStr(d = new Date()) {
 // separately so stats count even when the player never submits a name.
 async function reportStats(env, request) {
   const ip = clientIp(request);
-  if (await rateLimited(env, ip)) throw httpError(429, 'rate limited — slow down');
+  if (await rateLimited(env, ip, 'stats')) throw httpError(429, 'rate limited — slow down');
   const body = await readJson(request);
   const { runId, startedAt, token, flaps, gates, durationMs } = body;
 
