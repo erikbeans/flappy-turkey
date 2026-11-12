@@ -31,7 +31,7 @@ No build step and no dependencies. Either:
   - **Live wires** ⚡ — swaying cable with sparking tips; only the cable and its sparks are dangerous (36px hitbox, sprite drawn to match)
 - A path through every gap is always guaranteed: gap centers never jump more than 200px between obstacles, and the gap never shrinks below what fits the turkey.
 - Each obstacle you pass = 1 point. Best score is saved in `localStorage`.
-- The game speeds up and the gaps shrink slightly as your score grows.
+- The game speeds up and the gaps shrink slightly as your score grows — and the background scenery changes with each difficulty stage (sunset → oak forest → lake → snow).
 - Hit an obstacle and the turkey gets **roasted** 🥘 — it tumbles, bounces off the floor a couple of times, and comes to rest. The game-over panel only appears once the turkey is lying on the ground.
 - Hitboxes match the drawn sprites: obstacles only hurt where you see them (live wires are only dangerous at the cable and its sparks, pitchforks at handle + trident head, fryers including the oil bulge), and the turkey's collision outline covers its visible body — no invisible edges, no unpunished overlaps.
 
@@ -115,6 +115,12 @@ height is **676 px**. The turkey's hitbox (`BIRD_HIT`, 11 circles) is about
 | 2 (s=20) | 203 px/s | 1.57 s | 166 px | 58.5 px |
 | 3 (s=40) | 237 px/s | 1.35 s | 152 px | 51.5 px |
 | 4 (s=60) — **max** | 270 px/s | 1.19 s | **138 px** | **44.5 px** |
+
+The background scenery follows these 4 stages — entering a new stage slides the old
+scene away (at world-scroll speed, as if the turkey flew out of it) and into the next:
+**sunset** (stage 1) → **oak forest** (stage 2) → **lake** (stage 3) → **snow**
+(stage 4, max hardness). The stage boundaries are derived from the speed/gap ramp
+formulas above, so they move automatically if the tuning knobs change.
 
 ### Which knob makes it harder (increase the value)
 

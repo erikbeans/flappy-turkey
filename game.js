@@ -324,9 +324,10 @@
     }
 
     // falling particles always drift: autumn leaves in the sunset scene, green-gold
-    // leaves in the forest, nothing over the lake, snowflakes in the snow scene
+    // leaves in the forest, snowflakes in the snow and christmas scenes, nothing
+    // over the lake, city or space
     const pScene = sceneTransition ? sceneTransition.to : sceneIndex;
-    if (pScene === 3) {
+    if (pScene === 3 || pScene === 6) {
       partAcc += dt * 26;
       while (partAcc > 1) {
         partAcc -= 1;
@@ -340,7 +341,7 @@
           rot: 0, vr: 0,
         });
       }
-    } else if (pScene !== 2) {
+    } else if (pScene === 0 || pScene === 1 || pScene === 7) {
       partAcc += dt * 7;
       while (partAcc > 1) {
         partAcc -= 1;
@@ -414,7 +415,8 @@
           p.scored = true;
           score++;
           sfx.point();
-          // every 50 points the scenery changes; slide from the old scene to the new one
+          // entering a new difficulty stage (or a fixed scene mark) changes the
+          // scenery; slide from the old scene to the new one
           const nextScene = sceneFor(score);
           if (nextScene !== sceneIndex) {
             sceneTransition = { from: sceneIndex, to: nextScene, t: 0 };
@@ -519,17 +521,40 @@
   }
 
   // ---------- Background scenes ----------
-  // The scenery changes every 50 points: 0-49 the original Thanksgiving sunset,
-  // 50-99 an oak forest, 100-149 a lake under open sky, 150+ a snow scene.
-  // Crossing a threshold starts a slide: the old scene moves out to the left at
+  // The scenery follows the game's difficulty ramp: scroll speed and gap size both
+  // ramp up until "max hardness" (see the progression table in README). That ramp
+  // [0..1] is split into 4 equal stages, one per scene: sunset -> oak forest ->
+  // lake -> snow. With the current tuning the stages begin at scores 0 / 20 / 40 / 60,
+  // and they move automatically if the difficulty knobs are retuned.
+  // Past max hardness the scenery keeps going at fixed score marks: city at 100,
+  // space at 150, christmas at 200, and back to the original sunset at 250.
+  // Crossing into a new scene starts a slide: the old scene moves out to the left at
   // world-scroll speed (as if the bird flew away from it) while the new scene
   // slides in from the right — never an abrupt cut.
-  const SCENE_NAMES = ['sunset', 'forest', 'lake', 'snow'];
-  const SCENE_STEP = 50; // points per scene
-  const MAX_SCENE = SCENE_NAMES.length - 1;
-  const THEME_COLORS = ['#2e1a47', '#4e7d3a', '#4a9fd8', '#8fb8e0'];
+  const SCENE_NAMES = ['sunset', 'forest', 'lake', 'snow', 'city', 'space', 'christmas', 'sunset'];
+  const MAX_SCENE = SCENE_NAMES.length - 1; // last entry loops back to the original sunset
+  const THEME_COLORS = ['#2e1a47', '#4e7d3a', '#4a9fd8', '#8fb8e0', '#141a38', '#050510', '#0a2438', '#2e1a47'];
+  const EXTRA_SCENE_MARKS = [100, 150, 200, 250]; // city, space, christmas, back to sunset
 
-  function sceneFor(s) { return Math.min(MAX_SCENE, Math.floor(s / SCENE_STEP)); }
+  // 0..1 difficulty progress at score s: whichever of speed / gap ramps fastest
+  function difficultyProgress(s) {
+    const speedProg = MAX_SPEED_BONUS > 0 ? Math.min(1, (s * SPEED_RAMP) / MAX_SPEED_BONUS) : 1;
+    const gapSpan = BASE_GAP - MIN_GAP;
+    const gapProg = gapSpan > 0 ? Math.min(1, (s * GAP_SHRINK) / gapSpan) : 1;
+    return Math.max(speedProg, gapProg);
+  }
+
+  // scene index for a score: the difficulty ramp gives scenes 0-3 (sunset..snow);
+  // once max hardness is reached, fixed marks give city/space/christmas/sunset
+  function sceneFor(s) {
+    const rampStage = Math.min(3, Math.floor(difficultyProgress(s) * 3 + 1e-9));
+    if (rampStage < 3) return rampStage;
+    let idx = 3; // snow at max hardness
+    for (let i = 0; i < EXTRA_SCENE_MARKS.length; i++) {
+      if (s >= EXTRA_SCENE_MARKS[i]) idx = 4 + i;
+    }
+    return idx;
+  }
 
   function setThemeColor(i) {
     const m = document.querySelector('meta[name="theme-color"]');
@@ -582,6 +607,36 @@
   for (let i = 0; i < 5; i++) {
     pines.push({ x: 34 + i * 96 + Math.random() * 30, base: H * (0.86 + Math.random() * 0.03), w: 56 + Math.random() * 26, h: 110 + Math.random() * 60 });
   }
+
+  // Scene 4 — city at night
+  const cityStars = [];
+  for (let i = 0; i < 40; i++) {
+    cityStars.push({ x: Math.random() * W, y: Math.random() * H * 0.5, r: 0.6 + Math.random() * 1.4, ph: Math.random() * 6.28 });
+  }
+  const cityFar = [];
+  for (let i = 0; i < 7; i++) {
+    cityFar.push({ x: i * 70 - 10 + Math.random() * 20, w: 55 + Math.random() * 30, h: 80 + Math.random() * 90 });
+  }
+  const cityNear = [];
+  for (let i = 0; i < 5; i++) {
+    cityNear.push({ x: i * 100 - 15 + Math.random() * 30, w: 80 + Math.random() * 30, h: 140 + Math.random() * 120 });
+  }
+
+  // Scene 5 — outer space
+  const spaceStars = [];
+  for (let i = 0; i < 80; i++) {
+    spaceStars.push({ x: Math.random() * W, y: Math.random() * H, r: 0.5 + Math.random() * 1.6, ph: Math.random() * 6.28, sp: 1 + Math.random() * 3 });
+  }
+  const planet = { x: W * 0.74, y: H * 0.22, r: 46 };
+
+  // Scene 6 — christmas night
+  const xmasStars = [];
+  for (let i = 0; i < 50; i++) {
+    xmasStars.push({ x: Math.random() * W, y: Math.random() * H * 0.55, r: 0.6 + Math.random() * 1.4, ph: Math.random() * 6.28 });
+  }
+  const xmasHills = makeBumps(6, H * 0.80, 60, 100, 14);
+  const xmasTree = { x: W * 0.68, base: H - GROUND_H, w: 120, h: 210 };
+  const xmasLights = ['#ff5252', '#ffd740', '#69f0ae', '#40c4ff'];
 
   // Scene 0 — the original Thanksgiving sunset
   const trees = [
@@ -869,19 +924,250 @@
     }
   }
 
+  // Scene 4 — city at night: starfield, crescent moon, two skyline layers with lit windows
+  function drawCitySky() {
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, '#0d1030');
+    sky.addColorStop(0.6, '#1b2350');
+    sky.addColorStop(1, '#2c3a6e');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+
+    // twinkling stars
+    for (const st of cityStars) {
+      ctx.fillStyle = `rgba(255,255,255,${0.35 + 0.55 * (0.5 + 0.5 * Math.sin(elapsed * 2 + st.ph))})`;
+      ctx.beginPath(); ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // crescent moon
+    const mx = W * 0.78, my = H * 0.14;
+    ctx.fillStyle = '#f4f1de';
+    ctx.beginPath(); ctx.arc(mx, my, 30, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#10143a';
+    ctx.beginPath(); ctx.arc(mx - 12, my - 6, 26, 0, Math.PI * 2); ctx.fill();
+
+    // far skyline (silhouettes with a few lit windows)
+    ctx.fillStyle = '#232a4d';
+    for (const b of cityFar) {
+      ctx.fillRect(b.x, H - b.h, b.w, b.h + 20);
+      ctx.fillStyle = 'rgba(255,217,122,0.5)';
+      for (let k = 0; k < (b.w / 18) | 0; k++) {
+        if ((k * 13 + (b.x | 0)) % 4 === 0) ctx.fillRect(b.x + 8 + k * 18, H - b.h + 12 + (k % 3) * 22, 6, 8);
+      }
+      ctx.fillStyle = '#232a4d';
+    }
+
+    // near skyline with window grids and blinking antenna lights
+    for (const b of cityNear) {
+      ctx.fillStyle = '#161c38';
+      ctx.fillRect(b.x, H - b.h, b.w, b.h + 20);
+      for (let wy = H - b.h + 12; wy < H - 24; wy += 18) {
+        for (let wx = b.x + 8; wx < b.x + b.w - 12; wx += 14) {
+          const hsh = ((wx | 0) * 31 + (wy | 0) * 17) % 7;
+          if (hsh < 2) {
+            ctx.fillStyle = hsh === 0 ? '#ffd97a' : '#9adcff';
+            ctx.fillRect(wx, wy, 8, 10);
+          }
+        }
+      }
+      if (b.w > 90) {
+        const ax = b.x + b.w / 2;
+        ctx.strokeStyle = '#0c0f22';
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(ax, H - b.h); ctx.lineTo(ax, H - b.h - 22); ctx.stroke();
+        if (Math.sin(elapsed * 3 + b.x) > 0) {
+          ctx.fillStyle = '#ff5252';
+          ctx.beginPath(); ctx.arc(ax, H - b.h - 24, 3, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+    }
+  }
+
+  // Scene 5 — outer space: starfield, ringed planet, nebula glow, occasional shooting star
+  function drawSpaceSky() {
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, '#020208');
+    sky.addColorStop(0.6, '#0a0a24');
+    sky.addColorStop(1, '#141433');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+
+    // soft nebula glows
+    let neb = ctx.createRadialGradient(W * 0.2, H * 0.3, 10, W * 0.2, H * 0.3, 160);
+    neb.addColorStop(0, 'rgba(120,60,180,0.20)');
+    neb.addColorStop(1, 'rgba(120,60,180,0)');
+    ctx.fillStyle = neb;
+    ctx.fillRect(0, 0, W * 0.6, H * 0.7);
+    neb = ctx.createRadialGradient(W * 0.55, H * 0.75, 10, W * 0.55, H * 0.75, 150);
+    neb.addColorStop(0, 'rgba(30,140,120,0.16)');
+    neb.addColorStop(1, 'rgba(30,140,120,0)');
+    ctx.fillStyle = neb;
+    ctx.fillRect(W * 0.2, H * 0.4, W * 0.8, H * 0.6);
+
+    // twinkling stars
+    for (const st of spaceStars) {
+      ctx.fillStyle = `rgba(255,255,255,${0.3 + 0.6 * (0.5 + 0.5 * Math.sin(elapsed * st.sp + st.ph))})`;
+      ctx.beginPath(); ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // ringed planet
+    ctx.save();
+    ctx.translate(planet.x, planet.y);
+    ctx.rotate(-0.35);
+    ctx.strokeStyle = 'rgba(190,200,255,0.4)';
+    ctx.lineWidth = 7;
+    ctx.beginPath(); ctx.ellipse(0, 0, planet.r + 22, (planet.r + 22) * 0.32, 0, Math.PI, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+    const pg = ctx.createRadialGradient(planet.x - 14, planet.y - 14, 6, planet.x, planet.y, planet.r);
+    pg.addColorStop(0, '#7fb2e8');
+    pg.addColorStop(0.6, '#3f6fb5');
+    pg.addColorStop(1, '#1d3a66');
+    ctx.fillStyle = pg;
+    ctx.beginPath(); ctx.arc(planet.x, planet.y, planet.r, 0, Math.PI * 2); ctx.fill();
+    ctx.save();
+    ctx.translate(planet.x, planet.y);
+    ctx.rotate(-0.35);
+    ctx.strokeStyle = 'rgba(210,220,255,0.55)';
+    ctx.lineWidth = 7;
+    ctx.beginPath(); ctx.ellipse(0, 0, planet.r + 22, (planet.r + 22) * 0.32, 0, 0, Math.PI); ctx.stroke();
+    ctx.restore();
+
+    // shooting star every ~6 seconds
+    const ph = (elapsed % 6) / 6;
+    if (ph < 0.16) {
+      const t = ph / 0.16;
+      const sx = W * 0.95 - t * W * 0.75;
+      const sy = H * 0.08 + t * H * 0.22;
+      const tail = ctx.createLinearGradient(sx, sy, sx + 70, sy + 26);
+      tail.addColorStop(0, 'rgba(255,255,255,0.9)');
+      tail.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.strokeStyle = tail;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(sx + 70, sy + 26); ctx.lineTo(sx, sy); ctx.stroke();
+    }
+  }
+
+  // Scene 6 — christmas night: stars, moon, snowy hills, string lights, decorated tree
+  function drawChristmasSky() {
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, '#051224');
+    sky.addColorStop(0.6, '#0b2a44');
+    sky.addColorStop(1, '#14455c');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+
+    // stars
+    for (const st of xmasStars) {
+      ctx.fillStyle = `rgba(255,255,255,${0.35 + 0.55 * (0.5 + 0.5 * Math.sin(elapsed * 2.2 + st.ph))})`;
+      ctx.beginPath(); ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // warm full moon with glow
+    const mx = W * 0.24, my = H * 0.15;
+    const glow = ctx.createRadialGradient(mx, my, 8, mx, my, 90);
+    glow.addColorStop(0, 'rgba(255,243,201,0.7)');
+    glow.addColorStop(1, 'rgba(255,243,201,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(mx - 90, my - 90, 180, 180);
+    ctx.fillStyle = '#fff3c9';
+    ctx.beginPath(); ctx.arc(mx, my, 30, 0, Math.PI * 2); ctx.fill();
+
+    // snowy hills
+    ctx.fillStyle = '#cfe3f2';
+    for (const hb of xmasHills) {
+      ctx.beginPath(); ctx.ellipse(hb.x, hb.y, hb.r, hb.r * 0.5, 0, Math.PI, 0); ctx.fill();
+    }
+
+    // string lights sagging across the sky
+    const ly = H * 0.24;
+    ctx.strokeStyle = 'rgba(15,25,20,0.9)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-6, ly - 14);
+    ctx.quadraticCurveTo(W / 2, ly + 46, W + 6, ly - 10);
+    ctx.stroke();
+    for (let i = 0; i < 12; i++) {
+      const t = (i + 0.5) / 12;
+      const bx = (1 - t) * (1 - t) * -6 + 2 * (1 - t) * t * (W / 2) + t * t * (W + 6);
+      const by = (1 - t) * (1 - t) * (ly - 14) + 2 * (1 - t) * t * (ly + 46) + t * t * (ly - 10);
+      const blink = 0.55 + 0.45 * Math.sin(elapsed * 3.5 + i * 1.3);
+      ctx.fillStyle = xmasLights[i % 4];
+      ctx.globalAlpha = blink;
+      ctx.beginPath(); ctx.arc(bx, by + 4, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = blink * 0.9;
+      ctx.beginPath(); ctx.arc(bx, by + 4, 3.4, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // decorated christmas tree (base tucked behind the ground strip)
+    const t = xmasTree;
+    ctx.fillStyle = '#4a2f1a';
+    ctx.fillRect(t.x - 7, t.base - 16, 14, 22);
+    for (let tier = 0; tier < 4; tier++) {
+      const ty = t.base - 18 - tier * (t.h * 0.21);
+      const tw = t.w * (1 - tier * 0.24);
+      const th = t.h * 0.3;
+      ctx.fillStyle = '#1e5c34';
+      ctx.beginPath();
+      ctx.moveTo(t.x - tw / 2, ty);
+      ctx.lineTo(t.x, ty - th);
+      ctx.lineTo(t.x + tw / 2, ty);
+      ctx.closePath(); ctx.fill();
+      // snow on the tier edge
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(t.x - tw * 0.42, ty - th * 0.32);
+      ctx.lineTo(t.x, ty - th);
+      ctx.lineTo(t.x + tw * 0.42, ty - th * 0.32);
+      ctx.stroke();
+      // ornaments + blinking lights
+      for (let o = 0; o < 5; o++) {
+        const oy = ty - th * (0.25 + 0.55 * ((o * 37 + tier * 11) % 10) / 10);
+        const ox = t.x + (((o * 53 + tier * 29) % 100) / 100 - 0.5) * tw * 0.7;
+        if ((o + tier) % 2 === 0) {
+          ctx.fillStyle = xmasLights[(o + tier) % 4];
+          ctx.globalAlpha = 0.6 + 0.4 * Math.sin(elapsed * 4 + o * 2 + tier);
+          ctx.beginPath(); ctx.arc(ox, oy, 3, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = 1;
+        } else {
+          ctx.fillStyle = '#e8b4b8';
+          ctx.beginPath(); ctx.arc(ox, oy, 3.6, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+    }
+    // glowing star on top
+    ctx.fillStyle = `rgba(255,215,64,${0.7 + 0.3 * Math.sin(elapsed * 3)})`;
+    ctx.beginPath(); ctx.arc(t.x, t.base - t.h - 8, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,215,64,0.8)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(t.x - 12, t.base - t.h - 8); ctx.lineTo(t.x + 12, t.base - t.h - 8);
+    ctx.moveTo(t.x, t.base - t.h - 20); ctx.lineTo(t.x, t.base - t.h + 4);
+    ctx.stroke();
+  }
+
   function drawSceneSky(i) {
     if (i === 1) drawForestSky();
     else if (i === 2) drawLakeSky();
     else if (i === 3) drawSnowSky();
-    else drawSunsetSky();
+    else if (i === 4) drawCitySky();
+    else if (i === 5) drawSpaceSky();
+    else if (i === 6) drawChristmasSky();
+    else drawSunsetSky(); // scenes 0 and 7 (the looped-back original sunset)
   }
 
-  // ground strip per scene: dirt+grass, forest floor, sandy shore, snow
+  // ground strip per scene: dirt+grass, forest floor, sandy shore, snow, city street,
+  // moon surface, christmas snow, and back to dirt+grass for the looped sunset
   const GROUND_PALS = [
     { base: '#7a5230', patch: 'rgba(0,0,0,0.14)', top: '#8aa845', hi: '#a4c25a' },
     { base: '#7a5a33', patch: 'rgba(0,0,0,0.16)', top: '#6fae4a', hi: '#8ccb62' },
     { base: '#e6cf9c', patch: 'rgba(150,120,70,0.28)', top: '#f2e2b6', hi: '#faf0cd' },
     { base: '#e9f2fb', patch: 'rgba(150,185,220,0.35)', top: '#ffffff', hi: '#d9eaf8' },
+    { base: '#33384a', patch: 'rgba(0,0,0,0.30)', top: '#4a5164', hi: '#5d6579' },
+    { base: '#23232e', patch: 'rgba(255,255,255,0.05)', top: '#3d3d4e', hi: '#4c4c60' },
+    { base: '#e9f2fb', patch: 'rgba(150,185,220,0.35)', top: '#ffffff', hi: '#ffd76e' },
+    { base: '#7a5230', patch: 'rgba(0,0,0,0.14)', top: '#8aa845', hi: '#a4c25a' },
   ];
 
   function drawSceneGround(i) {
@@ -1454,6 +1740,8 @@
         ? { from: sceneTransition.from, to: sceneTransition.to, t: Math.round(sceneTransition.t * 1000) / 1000 }
         : null;
     },
+    get difficulty() { return Math.round(difficultyProgress(score) * 1000) / 1000; },
+    sceneForScore(s) { return sceneFor(s); }, // pure mapping: score -> scene index
     get obstacles() { return JSON.parse(JSON.stringify(OBSTACLES)); },
     get hitShape() { return BIRD_HIT.map((c) => ({ ...c })); },
     get pipes() { return pipes.map((p) => ({ x: Math.round(p.x), type: p.type, w: p.w, hitW: p.hitW, gap: Math.round(p.gap), gapY: Math.round(p.gapY) })); },
