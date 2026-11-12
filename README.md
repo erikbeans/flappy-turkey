@@ -29,11 +29,11 @@ No build step and no dependencies. Either:
   - **Deep fryers** — vat of bubbling oil at the gap edge (96px)
   - **Pitchforks** 🍴 — wooden handle with a steel trident head (80px)
   - **Live wires** ⚡ — swaying cable with sparking tips; only the cable and its sparks are dangerous (36px hitbox, sprite drawn to match)
-- A path through every gap is always guaranteed: gap centers never jump more than 210px between obstacles, and the gap never shrinks below what fits the turkey.
+- A path through every gap is always guaranteed: gap centers never jump more than 200px between obstacles, and the gap never shrinks below what fits the turkey.
 - Each obstacle you pass = 1 point. Best score is saved in `localStorage`.
 - The game speeds up and the gaps shrink slightly as your score grows.
-- Hit an obstacle and the game **freezes at the moment of impact** — tap the screen to step the roasted-turkey bounce 🥘 forward one beat at a time. The turkey tumbles, bounces off the floor a couple of times, and comes to rest; the game-over panel appears once it's lying on the ground, and a final tap starts a new round.
-- Hitboxes always stay **within the drawn sprites**: obstacles only hurt where you see them (live wires are only dangerous at the cable and its sparks), and the turkey's collision outline is inscribed in its body — no invisible edges.
+- Hit an obstacle and the turkey gets **roasted** 🥘 — it tumbles, bounces off the floor a couple of times, and comes to rest. The game-over panel only appears once the turkey is lying on the ground.
+- Hitboxes match the drawn sprites: obstacles only hurt where you see them (live wires are only dangerous at the cable and its sparks, pitchforks at handle + trident head, fryers including the oil bulge), and the turkey's collision outline covers its visible body — no invisible edges, no unpunished overlaps.
 
 ## Global leaderboard (top 100) 🏆
 

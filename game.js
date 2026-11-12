@@ -93,9 +93,11 @@
 
   // ---------- Game state ----------
   let state;        // 'ready' | 'play' | 'dead'
-  let bird, pipes, leaves, clouds, steam;
+  let bird, pipes, particles, clouds, steam;
   let score, best, distance, speed, flaps;
-  let flapAnim, flash, deadTimer, leafAcc, steamAcc, elapsed;
+  let flapAnim, flash, deadTimer, partAcc, steamAcc, elapsed;
+  let sceneIndex = 0;         // background scene matching the current score (see sceneFor)
+  let sceneTransition = null; // { from, to, t } while the scenery slides between scenes
   let restAt = 0;        // deadTimer when the roasted turkey came to rest
   let boardOffered = false; // leaderboard auto-opened once for this death
 
@@ -112,7 +114,7 @@
     if (window.FLAPPY) window.FLAPPY.ui.hide();
     bird = { x: BIRD_X, y: H * 0.42, vy: 0, vx: 0, rot: 0, roasted: false, bounces: 0, resting: false };
     pipes = [];
-    leaves = [];
+    particles = [];
     steam = [];
     score = 0;
     flaps = 0;
@@ -121,11 +123,14 @@
     flapAnim = 0;
     flash = 0;
     deadTimer = 0;
-    leafAcc = 0;
+    partAcc = 0;
     steamAcc = 0;
     elapsed = 0;
     restAt = 0;
     boardOffered = false;
+    sceneIndex = 0;
+    sceneTransition = null;
+    setThemeColor(0);
     state = 'ready';
   }
 
@@ -305,33 +310,62 @@
   function update(dt) {
     elapsed += dt;
 
+    // while the scenery changes, the old scene slides away at world-scroll speed —
+    // exactly as fast as the bird flies, so it reads as flying from one scene to the next
+    if (sceneTransition) {
+      sceneTransition.t += (speed * dt) / W;
+      if (sceneTransition.t >= 1) sceneTransition = null;
+    }
+
     // drifting clouds always move
     for (const c of clouds) {
       c.x -= c.v * dt;
       if (c.x < -140 * c.s) { c.x = W + 140 * c.s; c.y = 60 + Math.random() * 220; }
     }
 
-    // falling leaves always drift
-    leafAcc += dt * 7;
-    while (leafAcc > 1) {
-      leafAcc -= 1;
-      leaves.push({
-        x: Math.random() * W, y: -12,
-        vy: 40 + Math.random() * 55,
-        sway: Math.random() * Math.PI * 2,
-        swaySpeed: 1.5 + Math.random() * 2.5,
-        size: 4 + Math.random() * 4.5,
-        rot: Math.random() * Math.PI * 2,
-        vr: (Math.random() - 0.5) * 4,
-        color: ['#c0392b', '#e67e22', '#f1c40f', '#d35400', '#a93226'][(Math.random() * 5) | 0],
-      });
+    // falling particles always drift: autumn leaves in the sunset scene, green-gold
+    // leaves in the forest, nothing over the lake, snowflakes in the snow scene
+    const pScene = sceneTransition ? sceneTransition.to : sceneIndex;
+    if (pScene === 3) {
+      partAcc += dt * 26;
+      while (partAcc > 1) {
+        partAcc -= 1;
+        particles.push({
+          kind: 'flake',
+          x: Math.random() * W, y: -10,
+          vy: 26 + Math.random() * 42,
+          sway: Math.random() * Math.PI * 2,
+          swaySpeed: 0.8 + Math.random() * 1.8,
+          size: 1.6 + Math.random() * 2.6,
+          rot: 0, vr: 0,
+        });
+      }
+    } else if (pScene !== 2) {
+      partAcc += dt * 7;
+      while (partAcc > 1) {
+        partAcc -= 1;
+        const palette = pScene === 1
+          ? ['#3e7c3a', '#61ad4e', '#9ccc65', '#c0ca33', '#ffb300']
+          : ['#c0392b', '#e67e22', '#f1c40f', '#d35400', '#a93226'];
+        particles.push({
+          kind: 'leaf',
+          x: Math.random() * W, y: -12,
+          vy: 40 + Math.random() * 55,
+          sway: Math.random() * Math.PI * 2,
+          swaySpeed: 1.5 + Math.random() * 2.5,
+          size: 4 + Math.random() * 4.5,
+          rot: Math.random() * Math.PI * 2,
+          vr: (Math.random() - 0.5) * 4,
+          color: palette[(Math.random() * palette.length) | 0],
+        });
+      }
     }
-    for (const l of leaves) {
+    for (const l of particles) {
       l.y += l.vy * dt;
       l.x += Math.sin(elapsed * l.swaySpeed + l.sway) * 34 * dt;
       l.rot += l.vr * dt;
     }
-    leaves = leaves.filter((l) => l.y < H + 20);
+    particles = particles.filter((l) => l.y < H + 20);
 
     // steam wisps rising off the roasted turkey
     if (bird && bird.roasted) {
@@ -380,6 +414,13 @@
           p.scored = true;
           score++;
           sfx.point();
+          // every 50 points the scenery changes; slide from the old scene to the new one
+          const nextScene = sceneFor(score);
+          if (nextScene !== sceneIndex) {
+            sceneTransition = { from: sceneIndex, to: nextScene, t: 0 };
+            sceneIndex = nextScene;
+            setThemeColor(sceneIndex);
+          }
         }
         if (hitsPipe(p, ext.circles, top, bot)) {
           die(true);
@@ -478,7 +519,72 @@
     ctx.fillText(str, x, y);
   }
 
-  // ---------- Background: Thanksgiving sunset ----------
+  // ---------- Background scenes ----------
+  // The scenery changes every 50 points: 0-49 the original Thanksgiving sunset,
+  // 50-99 an oak forest, 100-149 a lake under open sky, 150+ a snow scene.
+  // Crossing a threshold starts a slide: the old scene moves out to the left at
+  // world-scroll speed (as if the bird flew away from it) while the new scene
+  // slides in from the right — never an abrupt cut.
+  const SCENE_NAMES = ['sunset', 'forest', 'lake', 'snow'];
+  const SCENE_STEP = 50; // points per scene
+  const MAX_SCENE = SCENE_NAMES.length - 1;
+  const THEME_COLORS = ['#2e1a47', '#4e7d3a', '#4a9fd8', '#8fb8e0'];
+
+  function sceneFor(s) { return Math.min(MAX_SCENE, Math.floor(s / SCENE_STEP)); }
+
+  function setThemeColor(i) {
+    const m = document.querySelector('meta[name="theme-color"]');
+    if (m) m.setAttribute('content', THEME_COLORS[i]);
+  }
+
+  // fixed scenery decorations (generated once, like the clouds, so they never flicker)
+  function makeBumps(n, yBase, rMin, rMax, jitter) {
+    const arr = [];
+    for (let i = 0; i < n; i++) {
+      arr.push({
+        x: (W / n) * i + Math.random() * (W / n),
+        y: yBase + (Math.random() - 0.5) * jitter,
+        r: rMin + Math.random() * (rMax - rMin),
+      });
+    }
+    return arr;
+  }
+
+  // Scene 1 — oak forest
+  const oaks = [];
+  for (let i = 0; i < 5; i++) {
+    oaks.push({ x: 30 + i * 96 + Math.random() * 36, y: H * (0.84 + Math.random() * 0.03), r: 26 + Math.random() * 13 });
+  }
+  const forestFar = makeBumps(7, H * 0.70, 40, 70, 14);
+  const forestNear = makeBumps(6, H * 0.80, 50, 85, 16);
+
+  // Scene 2 — lake
+  const lakeMountainsFar = [
+    { x: W * 0.18, w: 150, h: 90 },
+    { x: W * 0.55, w: 190, h: 130 },
+    { x: W * 0.92, w: 140, h: 80 },
+  ];
+  const lakeMountainsNear = [
+    { x: W * 0.38, w: 170, h: 70 },
+    { x: W * 0.82, w: 150, h: 58 },
+  ];
+  const reeds = [];
+  for (let i = 0; i < 7; i++) {
+    reeds.push({ x: 20 + Math.random() * (W - 40), h: 34 + Math.random() * 30, lean: (Math.random() - 0.5) * 14 });
+  }
+
+  // Scene 3 — snow
+  const snowMountains = [
+    { x: W * 0.22, w: 200, h: 150 },
+    { x: W * 0.68, w: 240, h: 190 },
+    { x: W * 0.98, w: 160, h: 110 },
+  ];
+  const pines = [];
+  for (let i = 0; i < 5; i++) {
+    pines.push({ x: 34 + i * 96 + Math.random() * 30, base: H * (0.86 + Math.random() * 0.03), w: 56 + Math.random() * 26, h: 110 + Math.random() * 60 });
+  }
+
+  // Scene 0 — the original Thanksgiving sunset
   const trees = [
     { x: 40, y: H * 0.845, r: 26, c: '#d35400' },
     { x: 110, y: H * 0.865, r: 32, c: '#c0392b' },
@@ -487,7 +593,18 @@
     { x: 390, y: H * 0.85, r: 27, c: '#a93226' },
   ];
 
-  function drawBackground() {
+  function drawClouds(color) {
+    ctx.fillStyle = color;
+    for (const c of clouds) {
+      ctx.beginPath();
+      ctx.ellipse(c.x, c.y, 46 * c.s, 16 * c.s, 0, 0, Math.PI * 2);
+      ctx.ellipse(c.x + 28 * c.s, c.y + 6 * c.s, 32 * c.s, 13 * c.s, 0, 0, Math.PI * 2);
+      ctx.ellipse(c.x - 30 * c.s, c.y + 7 * c.s, 28 * c.s, 11 * c.s, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawSunsetSky() {
     const sky = ctx.createLinearGradient(0, 0, 0, H);
     sky.addColorStop(0, '#2e1a47');
     sky.addColorStop(0.45, '#8e3b5c');
@@ -506,15 +623,7 @@
     ctx.fillStyle = '#ffd66b';
     ctx.beginPath(); ctx.arc(sx, sy, 42, 0, Math.PI * 2); ctx.fill();
 
-    // clouds
-    ctx.fillStyle = 'rgba(255,235,220,0.45)';
-    for (const c of clouds) {
-      ctx.beginPath();
-      ctx.ellipse(c.x, c.y, 46 * c.s, 16 * c.s, 0, 0, Math.PI * 2);
-      ctx.ellipse(c.x + 28 * c.s, c.y + 6 * c.s, 32 * c.s, 13 * c.s, 0, 0, Math.PI * 2);
-      ctx.ellipse(c.x - 30 * c.s, c.y + 7 * c.s, 28 * c.s, 11 * c.s, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    drawClouds('rgba(255,235,220,0.45)');
 
     // far ridge
     ctx.fillStyle = '#6b3560';
@@ -543,16 +652,250 @@
     }
   }
 
-  function drawGround() {
+  // Scene 1 — oak forest: misty green sky, sunbeams, treelines and big oaks
+  function drawForestSky() {
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, '#dff2c4');
+    sky.addColorStop(0.45, '#a5d684');
+    sky.addColorStop(0.8, '#79bd57');
+    sky.addColorStop(1, '#5aa348');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+
+    // pale morning sun with glow
+    const sx = W * 0.26, sy = H * 0.16;
+    const glow = ctx.createRadialGradient(sx, sy, 8, sx, sy, 120);
+    glow.addColorStop(0, 'rgba(255,250,214,0.9)');
+    glow.addColorStop(1, 'rgba(255,250,214,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(sx - 120, sy - 120, 240, 240);
+    ctx.fillStyle = '#fff8d8';
+    ctx.beginPath(); ctx.arc(sx, sy, 34, 0, Math.PI * 2); ctx.fill();
+
+    // sunbeams slanting down through the canopy
+    ctx.fillStyle = 'rgba(255,252,220,0.10)';
+    for (let i = 0; i < 3; i++) {
+      const bx = sx + i * 70 - 40;
+      ctx.beginPath();
+      ctx.moveTo(bx, sy - 20);
+      ctx.lineTo(bx + 46, sy - 20);
+      ctx.lineTo(bx + 150, H * 0.8);
+      ctx.lineTo(bx + 60, H * 0.8);
+      ctx.closePath(); ctx.fill();
+    }
+
+    drawClouds('rgba(255,255,255,0.5)');
+
+    // far and near treelines
+    ctx.fillStyle = '#4c8a3d';
+    for (const t of forestFar) {
+      ctx.beginPath(); ctx.ellipse(t.x, t.y, t.r, t.r * 0.75, 0, Math.PI, 0); ctx.fill();
+    }
+    ctx.fillStyle = '#3c7030';
+    for (const t of forestNear) {
+      ctx.beginPath(); ctx.ellipse(t.x, t.y, t.r, t.r * 0.75, 0, Math.PI, 0); ctx.fill();
+    }
+
+    // oak trees: thick trunk + clustered canopy
+    for (const t of oaks) {
+      ctx.fillStyle = '#5d4023';
+      ctx.fillRect(t.x - 7, t.y - 10, 14, 40);
+      ctx.fillStyle = '#4e9440';
+      ctx.beginPath();
+      ctx.arc(t.x, t.y - t.r * 0.7, t.r, 0, Math.PI * 2);
+      ctx.arc(t.x - t.r * 0.7, t.y - t.r * 0.3, t.r * 0.7, 0, Math.PI * 2);
+      ctx.arc(t.x + t.r * 0.7, t.y - t.r * 0.3, t.r * 0.7, 0, Math.PI * 2);
+      ctx.arc(t.x, t.y + t.r * 0.1, t.r * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.10)';
+      ctx.beginPath(); ctx.arc(t.x - t.r * 0.3, t.y - t.r * 0.9, t.r * 0.45, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  // Scene 2 — lake: bright sky, sun, mountains, shimmering water and reeds
+  function drawLakeSky() {
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, '#4f9fe0');
+    sky.addColorStop(0.45, '#9fd0ef');
+    sky.addColorStop(0.72, '#d8ecf7');
+    sky.addColorStop(1, '#ffedc9');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+
+    // sun with a warm glow
+    const sx = W * 0.72, sy = H * 0.18;
+    const glow = ctx.createRadialGradient(sx, sy, 8, sx, sy, 110);
+    glow.addColorStop(0, 'rgba(255,240,180,0.9)');
+    glow.addColorStop(1, 'rgba(255,240,180,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(sx - 110, sy - 110, 220, 220);
+    ctx.fillStyle = '#ffedae';
+    ctx.beginPath(); ctx.arc(sx, sy, 36, 0, Math.PI * 2); ctx.fill();
+
+    drawClouds('rgba(255,255,255,0.8)');
+
+    // distant mountains, far range then nearer range
+    const horizon = H * 0.58;
+    ctx.fillStyle = '#8fb4d6';
+    for (const m of lakeMountainsFar) {
+      ctx.beginPath();
+      ctx.moveTo(m.x - m.w / 2, horizon);
+      ctx.lineTo(m.x, horizon - m.h);
+      ctx.lineTo(m.x + m.w / 2, horizon);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle = '#a9c8e2';
+    for (const m of lakeMountainsNear) {
+      ctx.beginPath();
+      ctx.moveTo(m.x - m.w / 2, horizon + 14);
+      ctx.lineTo(m.x, horizon + 14 - m.h);
+      ctx.lineTo(m.x + m.w / 2, horizon + 14);
+      ctx.closePath(); ctx.fill();
+    }
+
+    // the lake
+    const water = ctx.createLinearGradient(0, horizon, 0, H);
+    water.addColorStop(0, '#b7e3f6');
+    water.addColorStop(0.35, '#6cbde8');
+    water.addColorStop(1, '#2f7fbe');
+    ctx.fillStyle = water;
+    ctx.fillRect(0, horizon, W, H - horizon);
+
+    // sun reflection shimmering down the water
+    for (let y = horizon + 10; y < H; y += 13) {
+      const w = 14 + ((y - horizon) / (H - horizon)) * 46;
+      const a = 0.34 * (0.5 + 0.5 * Math.sin(elapsed * 2.2 + y * 0.35));
+      ctx.fillStyle = `rgba(255,236,170,${a})`;
+      ctx.beginPath();
+      ctx.ellipse(sx + Math.sin(elapsed * 1.3 + y) * 8, y, w, 3.2, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // drifting ripple lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 9; i++) {
+      const ry = horizon + 24 + i * ((H - horizon - 30) / 9);
+      ctx.globalAlpha = 0.12 + 0.12 * Math.sin(elapsed * 1.6 + i * 1.7);
+      ctx.beginPath();
+      for (let x = -10; x <= W + 10; x += 24) {
+        const yy = ry + Math.sin(x * 0.05 + elapsed * 2 + i) * 3;
+        if (x === -10) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // reeds at the water's edge (their bases are tucked behind the ground strip)
+    for (const r of reeds) {
+      ctx.strokeStyle = '#3f6b2f';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(r.x, H - GROUND_H + 4);
+      ctx.quadraticCurveTo(r.x + r.lean, H - GROUND_H - r.h * 0.6, r.x + r.lean * 1.6, H - GROUND_H - r.h);
+      ctx.stroke();
+      ctx.fillStyle = '#7a4a21';
+      ctx.beginPath();
+      ctx.ellipse(r.x + r.lean * 1.6, H - GROUND_H - r.h, 4, 9, r.lean * 0.05, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Scene 3 — snow: pale winter sky, snow-capped mountains and snow-covered pines
+  function drawSnowSky() {
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, '#7fa9d8');
+    sky.addColorStop(0.55, '#bcd4ec');
+    sky.addColorStop(1, '#eef5fc');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+
+    // pale winter sun
+    const sx = W * 0.3, sy = H * 0.15;
+    const glow = ctx.createRadialGradient(sx, sy, 8, sx, sy, 100);
+    glow.addColorStop(0, 'rgba(240,248,255,0.9)');
+    glow.addColorStop(1, 'rgba(240,248,255,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(sx - 100, sy - 100, 200, 200);
+    ctx.fillStyle = '#f6fbff';
+    ctx.beginPath(); ctx.arc(sx, sy, 30, 0, Math.PI * 2); ctx.fill();
+
+    drawClouds('rgba(255,255,255,0.75)');
+
+    // snowy mountains with white caps
+    const base = H * 0.66;
+    for (const m of snowMountains) {
+      ctx.fillStyle = '#9db6d2';
+      ctx.beginPath();
+      ctx.moveTo(m.x - m.w / 2, base);
+      ctx.lineTo(m.x, base - m.h);
+      ctx.lineTo(m.x + m.w / 2, base);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#f4f9ff';
+      ctx.beginPath();
+      ctx.moveTo(m.x - m.w * 0.16, base - m.h * 0.72);
+      ctx.lineTo(m.x, base - m.h);
+      ctx.lineTo(m.x + m.w * 0.16, base - m.h * 0.72);
+      ctx.lineTo(m.x + m.w * 0.07, base - m.h * 0.62);
+      ctx.lineTo(m.x, base - m.h * 0.72);
+      ctx.lineTo(m.x - m.w * 0.07, base - m.h * 0.62);
+      ctx.closePath(); ctx.fill();
+    }
+
+    // snow-covered pines (bases tucked behind the ground strip)
+    for (const t of pines) {
+      ctx.fillStyle = '#6b4a2f';
+      ctx.fillRect(t.x - 4, t.base - 10, 8, 16);
+      for (let tier = 0; tier < 4; tier++) {
+        const ty = t.base - 14 - tier * (t.h * 0.22);
+        const tw = t.w * (1 - tier * 0.22);
+        const th = t.h * 0.3;
+        ctx.fillStyle = '#2e5d43';
+        ctx.beginPath();
+        ctx.moveTo(t.x - tw / 2, ty);
+        ctx.lineTo(t.x, ty - th);
+        ctx.lineTo(t.x + tw / 2, ty);
+        ctx.closePath(); ctx.fill();
+        // snow lying on top of the tier
+        ctx.fillStyle = 'rgba(255,255,255,0.92)';
+        ctx.beginPath();
+        ctx.moveTo(t.x - tw * 0.32, ty - th * 0.45);
+        ctx.lineTo(t.x, ty - th);
+        ctx.lineTo(t.x + tw * 0.32, ty - th * 0.45);
+        ctx.lineTo(t.x + tw * 0.12, ty - th * 0.32);
+        ctx.lineTo(t.x, ty - th * 0.45);
+        ctx.lineTo(t.x - tw * 0.12, ty - th * 0.32);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+  }
+
+  function drawSceneSky(i) {
+    if (i === 1) drawForestSky();
+    else if (i === 2) drawLakeSky();
+    else if (i === 3) drawSnowSky();
+    else drawSunsetSky();
+  }
+
+  // ground strip per scene: dirt+grass, forest floor, sandy shore, snow
+  const GROUND_PALS = [
+    { base: '#7a5230', patch: 'rgba(0,0,0,0.14)', top: '#8aa845', hi: '#a4c25a' },
+    { base: '#7a5a33', patch: 'rgba(0,0,0,0.16)', top: '#6fae4a', hi: '#8ccb62' },
+    { base: '#e6cf9c', patch: 'rgba(150,120,70,0.28)', top: '#f2e2b6', hi: '#faf0cd' },
+    { base: '#e9f2fb', patch: 'rgba(150,185,220,0.35)', top: '#ffffff', hi: '#d9eaf8' },
+  ];
+
+  function drawSceneGround(i) {
     const gy = H - GROUND_H;
-    ctx.fillStyle = '#7a5230';
+    const pal = GROUND_PALS[i];
+    ctx.fillStyle = pal.base;
     ctx.fillRect(0, gy, W, GROUND_H);
-    ctx.fillStyle = 'rgba(0,0,0,0.14)';
+    ctx.fillStyle = pal.patch;
     const off = -(distance % 48);
     for (let x = off; x < W; x += 48) ctx.fillRect(x, gy + 34, 24, GROUND_H - 34);
-    ctx.fillStyle = '#8aa845';
+    ctx.fillStyle = pal.top;
     ctx.fillRect(0, gy, W, 18);
-    ctx.fillStyle = '#a4c25a';
+    ctx.fillStyle = pal.hi;
     ctx.fillRect(0, gy, W, 5);
   }
 
@@ -561,17 +904,17 @@
     const x = p.x, w = p.w;
     const y0 = isTop ? -20 : edgeY;
     const h = isTop ? edgeY + 20 : H - GROUND_H - edgeY + 20;
+    const hx = x + (w - FORK_HANDLE_W) / 2;
     // wooden handle
-    const hx = x + (w - 22) / 2;
-    const wood = ctx.createLinearGradient(hx, 0, hx + 22, 0);
+    const wood = ctx.createLinearGradient(hx, 0, hx + FORK_HANDLE_W, 0);
     wood.addColorStop(0, '#7a4a21');
     wood.addColorStop(0.5, '#a06a34');
     wood.addColorStop(1, '#5d3717');
     ctx.fillStyle = wood;
-    roundRect(hx, y0, 22, h, 6); ctx.fill();
+    roundRect(hx, y0, FORK_HANDLE_W, h, 6); ctx.fill();
     ctx.strokeStyle = '#3f2410'; ctx.lineWidth = 3;
-    roundRect(hx, y0, 22, h, 6); ctx.stroke();
-    // steel trident head at the gap end; tines point into the gap
+    roundRect(hx, y0, FORK_HANDLE_W, h, 6); ctx.stroke();
+    // steel trident head at the gap end
     const metal = ctx.createLinearGradient(x, 0, x + w, 0);
     metal.addColorStop(0, '#90a4ae');
     metal.addColorStop(0.5, '#eceff1');
@@ -579,18 +922,21 @@
     ctx.fillStyle = metal;
     ctx.strokeStyle = '#37474f';
     ctx.lineWidth = 3;
-    // crossbar
-    const barY = isTop ? edgeY - 34 : edgeY + 22;
+    // collar where the handle meets the head
+    const collarY = isTop ? edgeY - FORK_HEAD_D - 12 : edgeY + FORK_HEAD_D;
+    roundRect(hx - 3, collarY, FORK_HANDLE_W + 6, 12, 3); ctx.fill(); ctx.stroke();
+    // crossbar, wider than the handle
+    const barY = isTop ? edgeY - FORK_HEAD_D : edgeY + FORK_HEAD_D - 12;
     roundRect(x - 4, barY, w + 8, 12, 4); ctx.fill(); ctx.stroke();
-    // three tines
+    // three long sharp tines; tips land exactly on the gap edge, pointing into the gap
+    // (top fork points down, bottom fork points UP)
     for (let i = 0; i < 3; i++) {
-      const tx = x + 12 + i * ((w - 24) / 2);
-      const ty0 = isTop ? edgeY - 22 : edgeY + 12;
-      const tipY = isTop ? edgeY : edgeY + 34;
+      const tx = x + 14 + i * ((w - 28) / 2);
+      const baseY = isTop ? edgeY - FORK_HEAD_D + 12 : edgeY + FORK_HEAD_D - 12;
       ctx.beginPath();
-      ctx.moveTo(tx, ty0);
-      ctx.lineTo(tx + 9, ty0);
-      ctx.lineTo(tx + 4.5, tipY);
+      ctx.moveTo(tx, baseY);
+      ctx.lineTo(tx + 10, baseY);
+      ctx.lineTo(tx + 5, edgeY);
       ctx.closePath();
       ctx.fill(); ctx.stroke();
     }
@@ -928,16 +1274,21 @@
     ctx.restore();
   }
 
-  function drawLeaves() {
-    for (const l of leaves) {
+  function drawParticles() {
+    for (const l of particles) {
       ctx.save();
       ctx.translate(l.x, l.y);
-      ctx.rotate(l.rot);
-      ctx.fillStyle = l.color;
-      ctx.beginPath(); ctx.ellipse(0, 0, l.size, l.size * 0.55, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = 'rgba(60,20,0,0.5)';
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(-l.size, 0); ctx.lineTo(l.size, 0); ctx.stroke();
+      if (l.kind === 'flake') {
+        ctx.fillStyle = 'rgba(255,255,255,0.92)';
+        ctx.beginPath(); ctx.arc(0, 0, l.size, 0, Math.PI * 2); ctx.fill();
+      } else {
+        ctx.rotate(l.rot);
+        ctx.fillStyle = l.color;
+        ctx.beginPath(); ctx.ellipse(0, 0, l.size, l.size * 0.55, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(60,20,0,0.5)';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(-l.size, 0); ctx.lineTo(l.size, 0); ctx.stroke();
+      }
       ctx.restore();
     }
   }
@@ -1038,10 +1389,25 @@
 
   // ---------- Draw ----------
   function draw() {
-    drawBackground();
-    drawLeaves();               // leaves fall in the background, behind obstacles
+    // sky + scenery: while a transition runs, the old scene slides out left and
+    // the new one slides in from the right, each exactly one screen wide
+    if (sceneTransition) {
+      const p = sceneTransition.t;
+      ctx.save(); ctx.translate(-p * W, 0); drawSceneSky(sceneTransition.from); ctx.restore();
+      ctx.save(); ctx.translate((1 - p) * W, 0); drawSceneSky(sceneTransition.to); ctx.restore();
+    } else {
+      drawSceneSky(sceneIndex);
+    }
+    drawParticles();            // leaves/snowflakes fall behind the obstacles
     for (const p of pipes) drawPipe(p);
-    drawGround();
+    // the ground strip slides with the scenery, so the whole scene flies by
+    if (sceneTransition) {
+      const p = sceneTransition.t;
+      ctx.save(); ctx.translate(-p * W, 0); drawSceneGround(sceneTransition.from); ctx.restore();
+      ctx.save(); ctx.translate((1 - p) * W, 0); drawSceneGround(sceneTransition.to); ctx.restore();
+    } else {
+      drawSceneGround(sceneIndex);
+    }
     drawTurkey();
     drawSteam();
     if (flash > 0) {
@@ -1080,6 +1446,13 @@
     get deadTimer() { return deadTimer; },
     get gameOverShown() { return gameOverVisible(); },
     get boardOffered() { return boardOffered; },
+    get scene() { return sceneIndex; },
+    get sceneName() { return SCENE_NAMES[sceneIndex]; },
+    get sceneTransition() {
+      return sceneTransition
+        ? { from: sceneTransition.from, to: sceneTransition.to, t: Math.round(sceneTransition.t * 1000) / 1000 }
+        : null;
+    },
     get obstacles() { return JSON.parse(JSON.stringify(OBSTACLES)); },
     get hitShape() { return BIRD_HIT.map((c) => ({ ...c })); },
     get pipes() { return pipes.map((p) => ({ x: Math.round(p.x), type: p.type, w: p.w, hitW: p.hitW, gap: Math.round(p.gap), gapY: Math.round(p.gapY) })); },
