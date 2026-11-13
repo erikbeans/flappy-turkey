@@ -39,12 +39,13 @@
   // Rule: the hitbox never extends beyond the animated sprite.
   const OBSTACLES = {
     oven:      { w: 108, hitW: 108 }, // solid steel body — hitbox == sprite
-    fryer:     { w: 96,  hitW: 96  }, // solid vat (oil/handle overhang the gap, that's forgiving)
+    fryer:     { w: 96,  hitW: 96  }, // solid vat; only a small FRYER_LIP at the gap edge is solid
     pitchfork: { w: 80,  hitW: 22  }, // narrow handle; full-width trident head added in pipeHitRects
     wires:     { w: 64,  hitW: 36  }, // only the cable + sparking fringe, not the whole column
   };
   const FORK_HANDLE_W = 22;  // must match the handle drawn in drawPitchfork
   const FORK_HEAD_D = 40;    // depth of the trident head at the gap edge
+  const FRYER_LIP = 6;       // how far the oil vat face bulges into the gap (hitbox includes only this lip)
   const MAX_GAP_JUMP = 200;    // max vertical move between consecutive gaps (guarantees a path)
   const BASE_GAP = 180;        // starting gap between obstacles (easier start: 65.5px clearance/side)
   const MIN_GAP = 138;         // smallest gap (max hardness) — 44.5px clearance/side around the 49px-tall turkey
@@ -343,9 +344,10 @@
       const hx = p.x + (p.w - p.hitW) / 2;
       push(hx, -20, p.hitW, top + 20);
       push(hx, bot, p.hitW, H - bot + 20);
-      // the oil vat and basket handle are DRAWN bulging into the gap — hitbox includes them
-      push(p.x + 8, top, p.w - 16, 18);
-      push(p.x + 8, bot - 18, p.w - 16, 18);
+      // the oil vat is DRAWN bulging into the gap, but the hitbox only includes a
+      // small lip (FRYER_LIP) at the gap edge — the rest is forgiving
+      push(p.x + 8, top, p.w - 16, FRYER_LIP);
+      push(p.x + 8, bot - FRYER_LIP, p.w - 16, FRYER_LIP);
     } else if (p.type === 'bush' || p.type === 'flowers' || p.type === 'chocolate') {
       const hx = p.x + (p.w - p.hitW) / 2;
       push(hx, -20, p.hitW, top + 20);

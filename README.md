@@ -106,7 +106,7 @@ height is **676 px**. The turkey's hitbox (`BIRD_HIT`, 11 circles) is about
 | Gap size | `max(MIN_GAP, BASE_GAP − GAP_SHRINK·s)` | 180 px | **138 px** (at s=60) |
 | Clearance per side of turkey | `(gap − 49)/2` | 65.5 px | **44.5 px** |
 | Live-wires effective gap | `max(136, gap − ELEC_SHRINK)` | 156 px (53.5 px/side) | **136 px** (43.5 px/side) |
-| Fryer vat bulge eats | 18 px into the gap, each side | eff. clearance 47.5 px/side | **26.5 px/side** |
+| Fryer vat lip (`FRYER_LIP`) | 6 px into the gap, each side | eff. clearance 59.5 px/side | **38.5 px/side** |
 | Pitchfork trident head | full 80 px wide × 34 px deep at gap edge | — | — |
 | Time spent inside an obstacle | `hitW / speed` | oven 0.64 s · fryer 0.56 s · pitchfork head 0.20 s · wires 0.21 s | oven 0.40 s … |
 | Obstacle mix | uniform over 4 types | **25% each** | — |
