@@ -61,11 +61,10 @@
   // ---------- Game modes ----------
   // Calvin Mode = the original game. Sonya Mode = much easier + friendlier:
   // one fixed easy difficulty for the whole game, the turkey can walk/run on
-  // the ground (landing is safe), and obstacle spacing is uneven (runs of 1-3
-  // missing obstacles give frequent chances to land). Scenes still follow the
-  // same score-based pattern as Calvin Mode.
-  // Sonya Mode is UNPUBLISHED during development: the picker is gated behind
-  // localStorage.flappyDev === '1' (see devUnlocked). LAUNCH: remove the gate.
+  // the ground (landing is safe), and obstacle spacing is uneven (occasionally
+  // 1 missing obstacle gives a chance to land). Scenes still follow the same
+  // score-based pattern as Calvin Mode. Both modes are live — the picker on the
+  // ready screen offers both.
   const SONYA_OBSTACLES = {
     bush:      { w: 100, hitW: 100 }, // leafy bush filling the column — hitbox == sprite (+ lip)
     fence:     { w: 44,  hitW: 44  }, // one wooden fence post — only the post is solid
@@ -164,15 +163,10 @@
 
   // ---------- Mode selection ----------
   const MODE_KEY = 'flappyTurkeyMode';
-  const DEV_KEY = 'flappyDev';
-  // Sonya Mode is unpublished while in development: only players with the dev
-  // flag see the Sonya picker/tab. LAUNCH: make this always true (remove gate).
-  let devUnlocked = false;
-  try { devUnlocked = localStorage.getItem(DEV_KEY) === '1'; } catch { /* private mode */ }
   let mode = 'calvin';
   try {
     const saved = localStorage.getItem(MODE_KEY);
-    if (saved === 'sonya' && devUnlocked) mode = 'sonya';
+    if (saved === 'sonya') mode = 'sonya'; // last played mode is the default
   } catch { /* ignore */ }
   let cfg = MODES[mode];
   let birdPalette = TURKEY_PAL;
@@ -1953,7 +1947,6 @@
 
   function pickMode(m, save = true) {
     if (!MODES[m]) return;
-    if (m === 'sonya' && !devUnlocked) return; // dev gate — LAUNCH: remove
     mode = m;
     cfg = MODES[m];
     try { if (save) localStorage.setItem(MODE_KEY, m); } catch { /* ignore */ }
@@ -1966,8 +1959,7 @@
 
   function syncPicker() {
     if (!pickerEl) return;
-    pickerEl.classList.toggle('hidden', !(devUnlocked && state === 'ready'));
-    if (pickSonya) pickSonya.classList.toggle('hidden', !devUnlocked);
+    pickerEl.classList.toggle('hidden', state !== 'ready');
   }
 
   if (pickerEl) {
@@ -2008,7 +2000,6 @@
     get difficulty() { return Math.round(difficultyProgress(score) * 1000) / 1000; },
     sceneForScore(s) { return sceneFor(s); }, // pure mapping: score -> scene index
     get mode() { return mode; },
-    get devUnlocked() { return devUnlocked; },
     get onGround() { return bird ? !!bird.onGround : false; },
     get walkCycle() { return Math.round(walkCycle * 100) / 100; },
     get speed() { return speed; },

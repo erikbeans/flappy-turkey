@@ -40,7 +40,7 @@ No build step and no dependencies. Either:
 - **🦃 Calvin Mode** — the original game described above: difficulty ramps with score, touching the ground ends the run.
 - **🌈 Sonya Mode** — a much easier, friendlier mode: fixed easy gap (210px) and spacing (360px, max gap jump 120px), with a gentle **speed ramp from 140 to 200 px/s over the first 200 points** (then flat), a randomly recolored crazy bird (purple/teal/yellow/…) each run, friendly obstacles (bushes, fence posts, flower bushes, happy chocolates), **uneven obstacle spacing** (occasionally 1 missing obstacle), and the turkey can **walk/run along the ground** instead of dying there. The scenery still changes with score, same as Calvin Mode.
 - The mode is picked on the ready screen at the start of each session (last choice remembered). Leaderboards are **separate per mode** (tabs on the 🏆 panel); cumulative flap/gate stats are combined across modes.
-- While Sonya Mode is in development it is hidden behind a dev flag: set `localStorage.flappyDev = '1'` to see the picker and the Sonya tab. **At launch, remove the `devUnlocked` gate in `game.js`/`leaderboard.js`.**
+- Both modes are live: the picker on the ready screen offers Calvin and Sonya (last choice remembered), and the 🏆 panel has a tab per mode.
 
 ## Global leaderboard (top 100) 🏆
 

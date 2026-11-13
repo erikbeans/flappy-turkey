@@ -16,15 +16,9 @@
   const MODE_KEY = 'flappyTurkeyMode'; // last picked mode (shared with game.js's picker)
   const TOP_N = 100; // the board keeps the top 100
 
-  // Game modes. Sonya Mode is UNPUBLISHED while we develop it: the Sonya picker
-  // button and leaderboard tab only appear when localStorage.flappyDev === '1'.
-  // LAUNCH: remove the devUnlocked gate (treat it as always true).
+  // Game modes — both are live; the board has a tab per mode.
   const MODES = ['calvin', 'sonya'];
-  const devUnlocked = (() => { try { return localStorage.getItem('flappyDev') === '1'; } catch { return false; } })();
-  function normMode(m) {
-    m = MODES.includes(m) ? m : 'calvin';
-    return m === 'sonya' && !devUnlocked ? 'calvin' : m;
-  }
+  function normMode(m) { return MODES.includes(m) ? m : 'calvin'; }
   const MODE_LABEL = { calvin: 'Calvin 🦃', sonya: 'Sonya 🌈' };
   let boardMode = normMode(safeGet(MODE_KEY));
   function safeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
@@ -200,8 +194,6 @@
         el.addEventListener(ev, (e) => e.stopPropagation());
       }
     }
-    // Sonya tab stays hidden until the dev gate is opened (LAUNCH: remove this)
-    if (els.tabSonya) els.tabSonya.classList.toggle('hidden', !devUnlocked);
     for (const b of els.tabs) {
       b.addEventListener('click', () => setBoardMode(b.dataset.mode));
     }
@@ -339,7 +331,7 @@
     api: { startRun, submitScore, top, reportStats, fetchStats },
     ui: { show, hide, refresh, setMode: setBoardMode },
     get online() { return online; },
-    get devMode() { return devUnlocked; }, // Sonya Mode visible only when true (until launch)
+    get devMode() { return true; }, // all modes unlocked (Sonya Mode is live)
     get mode() { return boardMode; },
   };
 })();
