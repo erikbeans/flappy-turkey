@@ -31,6 +31,7 @@
 
   // ---------- API ----------
   let run = null; // { runId, startedAt, token, t0, mode }
+  let lastRunMode = null; // mode of the last started run — submissions follow THIS, never the visible tab
 
   async function api(path, opts = {}) {
     const res = await fetch(apiBase + path, {
@@ -45,6 +46,7 @@
 
   async function startRun(mode) {
     const m = normMode(mode);
+    lastRunMode = m;
     setBoardMode(m, false); // the board follows the mode being played
     if (!online) { run = null; return null; }
     try {
@@ -58,7 +60,7 @@
   }
 
   async function submitScore(name, score) {
-    if (!online) return { online: false, ...localSubmit(name, score, boardMode) };
+    if (!online) return { online: false, ...localSubmit(name, score, lastRunMode || boardMode) };
     if (!run) throw new Error('no active run — start playing first');
     const durationMs = Math.max(0, Math.round(performance.now() - run.t0));
     const payload = {
@@ -313,6 +315,8 @@
     try {
       const res = await submitScore(name, pendingScore);
       highlightId = res.entry ? res.entry.id : null;
+      // show the board the score actually landed on (the run's mode, not the tab you were browsing)
+      setBoardMode((res.entry && res.entry.mode) || lastRunMode || boardMode, false);
       setMsg(res.online
         ? `🦃 Submitted! You're #${res.rank} on the global board.`
         : `Saved locally — you're #${res.rank} on this device's board.`);
