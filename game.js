@@ -83,9 +83,9 @@
     },
     sonya: {
       name: 'Sonya Mode', icon: '🌈',
-      baseGap: 210, minGap: 210, gapShrink: 0,         // one easy gap size, forever
-      baseSpeed: 140, speedRamp: 0, maxSpeedBonus: 0,  // one easy speed, forever
-      pipeSpacing: 360, maxGapJump: 120,               // roomier spacing, gentler gap moves
+      baseGap: 210, minGap: 210, gapShrink: 0,          // one easy gap size, forever
+      baseSpeed: 140, speedRamp: 0.3, maxSpeedBonus: 60, // gentle ramp: 140 -> 200 over 200 points, then flat
+      pipeSpacing: 360, maxGapJump: 120,                // roomier spacing, gentler gap moves
       obstacles: SONYA_OBSTACLES,
       groundKills: false,                               // touching the ground = walk/run, not death
       unevenSpacing: true,                              // sometimes 1-3 obstacle slots are skipped
